@@ -1,6 +1,10 @@
+import "dart:async";
+
+import "package:ciyue/core/app_globals.dart";
 import "package:ciyue/core/providers.dart";
 import "package:ciyue/src/generated/i18n/app_localizations.dart";
 import "package:ciyue/ui/core/word_display/buttons.dart";
+import "package:ciyue/ui/core/word_display/utils.dart";
 import "package:ciyue/ui/core/word_display/word_display.dart";
 import "package:ciyue/utils.dart";
 import "package:ciyue/viewModels/home.dart";
@@ -12,6 +16,20 @@ import "package:flutter_riverpod/flutter_riverpod.dart";
 import "actions.dart";
 import "history.dart";
 import "search.dart";
+
+/// The number keys, in the order they appear on a keyboard.
+const _digitKeys = <LogicalKeyboardKey>[
+  LogicalKeyboardKey.digit0,
+  LogicalKeyboardKey.digit1,
+  LogicalKeyboardKey.digit2,
+  LogicalKeyboardKey.digit3,
+  LogicalKeyboardKey.digit4,
+  LogicalKeyboardKey.digit5,
+  LogicalKeyboardKey.digit6,
+  LogicalKeyboardKey.digit7,
+  LogicalKeyboardKey.digit8,
+  LogicalKeyboardKey.digit9,
+];
 
 /// Keeps the desktop WordDisplay state alive as the selected word changes.
 class DesktopWordDisplayPane extends StatelessWidget {
@@ -72,6 +90,82 @@ class _DesktopHomeSplitView extends ConsumerWidget {
     }
 
     homeModel.selectedWord = history[newIndex].word;
+  }
+
+  /// Binds `Alt`+0..9 to the dictionary tabs of the entry.
+  ///
+  /// The tabs live inside the entry page, but the shortcut has to sit next
+  /// to the other app-level ones so that it works wherever the focus is.
+  /// The entry registers its tab controller, which is where the action ends
+  /// up.
+  ///
+  /// `Alt`+0 jumps to the AI explanation, `Alt`+1..9 to the first nine
+  /// dictionaries. A key that names no tab does nothing: in the expansion
+  /// layout there are no tabs at all, and a number past the last dictionary
+  /// has nowhere to go.
+  Map<SingleActivator, VoidCallback> _buildDictionaryTabShortcuts(
+    WidgetRef ref,
+    HomeModel homeModel,
+  ) {
+    final shortcuts = <SingleActivator, VoidCallback>{};
+    for (var number = 0; number < _digitKeys.length; number++) {
+      shortcuts[SingleActivator(_digitKeys[number], alt: true)] = () {
+        // Typing in the search box must not jump to another dictionary.
+        if (homeModel.searchBarFocusNode.hasFocus) return;
+
+        final tabController = dictTabController;
+        if (tabController == null) return;
+
+        final settings = ref.read(settingsProvider);
+        final dictionaryCount =
+            tabController.length - (settings.aiExplainWord ? 1 : 0);
+        final index = dictTabIndexForNumber(
+          number: number,
+          aiExplainWord: settings.aiExplainWord,
+          dictionaryCount: dictionaryCount,
+        );
+        if (index == null) return;
+        try {
+          tabController.animateTo(index);
+        } catch (_) {
+          // The tab bar was torn down between the check and the call.
+        }
+      };
+    }
+    return shortcuts;
+  }
+
+  /// Binds `Ctrl`+` and `Ctrl`+1..9 to the dictionary groups.
+  ///
+  /// The groups are numbered by the position they are listed in, so `Ctrl`+`
+  /// reaches the first one -- the default group -- and `Ctrl`+1..9 the
+  /// second to the tenth. A number past the last group does nothing.
+  Map<SingleActivator, VoidCallback> _buildGroupShortcuts(WidgetRef ref) {
+    final shortcuts = <SingleActivator, VoidCallback>{
+      const SingleActivator(LogicalKeyboardKey.backquote, control: true): () =>
+          _switchToGroup(ref, 1),
+    };
+    for (var number = 1; number < _digitKeys.length; number++) {
+      shortcuts[SingleActivator(_digitKeys[number], control: true)] = () =>
+          _switchToGroup(ref, number + 1);
+    }
+    return shortcuts;
+  }
+
+  void _switchToGroup(WidgetRef ref, int position) {
+    unawaited(ref.read(dictManagerModelProvider).switchToGroupAt(position));
+  }
+
+  /// Zooms the dictionary entry content in or out.
+  void _changeContentScale(WidgetRef ref, double delta) {
+    final settings = ref.read(settingsProvider);
+    unawaited(settings.setContentScale(settings.contentScale + delta));
+  }
+
+  /// Puts the dictionary entry content back to its normal size.
+  void _resetContentScale(WidgetRef ref) {
+    final settings = ref.read(settingsProvider);
+    unawaited(settings.setContentScale(1.0));
   }
 
   @override
@@ -148,6 +242,43 @@ class _DesktopHomeSplitView extends ConsumerWidget {
             playWordPronunciation(context, activeWord);
           }
         },
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          homeModel.focusSearchBar(selectAll: true);
+          if (homeModel.searchController.isAttached) {
+            homeModel.searchController.openView();
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.pageDown, control: true): () {
+          homeModel.nextTab();
+        },
+        const SingleActivator(LogicalKeyboardKey.pageUp, control: true): () {
+          homeModel.previousTab();
+        },
+        const SingleActivator(
+          LogicalKeyboardKey.keyS,
+          control: true,
+          shift: true,
+        ): () {
+          unawaited(ref.read(audioModelProvider).stopAudio());
+        },
+        const SingleActivator(LogicalKeyboardKey.equal, control: true): () {
+          _changeContentScale(ref, 0.1);
+        },
+        const SingleActivator(
+          LogicalKeyboardKey.equal,
+          control: true,
+          shift: true,
+        ): () {
+          _changeContentScale(ref, 0.1);
+        },
+        const SingleActivator(LogicalKeyboardKey.minus, control: true): () {
+          _changeContentScale(ref, -0.1);
+        },
+        const SingleActivator(LogicalKeyboardKey.digit0, control: true): () {
+          _resetContentScale(ref);
+        },
+        ..._buildDictionaryTabShortcuts(ref, homeModel),
+        ..._buildGroupShortcuts(ref),
       },
       child: Focus(
         autofocus: true,

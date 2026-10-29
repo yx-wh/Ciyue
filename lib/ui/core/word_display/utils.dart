@@ -16,6 +16,23 @@ import "package:material_ui/material_ui.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:go_router/go_router.dart";
 
+/// Maps `Alt` plus a number to a tab index in the dictionary tab bar.
+///
+/// Returns null when the key means nothing here: a number past the last
+/// dictionary, or the AI tab when the AI explanation is not shown.
+/// [number] is 0 for the AI tab and 1..9 for the dictionaries in the order
+/// they are displayed. [dictionaryCount] counts the dictionaries only, the
+/// AI tab is not one of them.
+int? dictTabIndexForNumber({
+  required int number,
+  required bool aiExplainWord,
+  required int dictionaryCount,
+}) {
+  if (number == 0) return aiExplainWord ? 0 : null;
+  if (number > dictionaryCount) return null;
+  return aiExplainWord ? number : number - 1;
+}
+
 Widget? buildTitle(
   String word,
   Settings settings, {
@@ -42,8 +59,18 @@ Widget withFloatingWindowBackHandler(BuildContext context, Widget child) {
   );
 }
 
-Widget buildWebView(String word, int id, bool isExpansion) {
-  return _WordContentView(word: word, dictId: id, isExpansion: isExpansion);
+Widget buildWebView(
+  String word,
+  int id,
+  bool isExpansion, {
+  void Function(String key)? onPageKey,
+}) {
+  return _WordContentView(
+    word: word,
+    dictId: id,
+    isExpansion: isExpansion,
+    onPageKey: onPageKey,
+  );
 }
 
 class _WordContentView extends ConsumerStatefulWidget {
@@ -51,10 +78,15 @@ class _WordContentView extends ConsumerStatefulWidget {
   final int dictId;
   final bool isExpansion;
 
+  /// Called with `PageUp`/`PageDown` when the entry is shown in the
+  /// expansion layout, where the WebView itself cannot scroll.
+  final void Function(String key)? onPageKey;
+
   const _WordContentView({
     required this.word,
     required this.dictId,
     required this.isExpansion,
+    this.onPageKey,
   });
 
   @override
@@ -77,6 +109,7 @@ class _WordContentViewState extends ConsumerState<_WordContentView> {
         content: content,
         dictId: widget.dictId,
         isExpansion: widget.isExpansion,
+        onPageKey: widget.onPageKey,
       );
     } else if (isDesktop()) {
       return WebviewWindows(
@@ -84,6 +117,7 @@ class _WordContentViewState extends ConsumerState<_WordContentView> {
         content: content,
         dictId: widget.dictId,
         isExpansion: widget.isExpansion,
+        onPageKey: widget.onPageKey,
       );
     } else {
       return FakeWebViewByAI(html: content);
@@ -95,6 +129,7 @@ class _WordContentViewState extends ConsumerState<_WordContentView> {
     // StarDict sections render with native widgets when every matched
     // entry is on hand in structured form and none of them uses HTML
     // fields; a section with HTML entries keeps the WebView below.
+    final settings = ref.watch(settingsProvider);
     final dict = ref.watch(dictManagerProvider).dicts[widget.dictId];
     if (dict is Stardict) {
       final lookup = ref.watch(dictionaryLookupProvider(widget.word)).value;
@@ -120,6 +155,7 @@ class _WordContentViewState extends ConsumerState<_WordContentView> {
             dictId: widget.dictId,
             isExpansion: widget.isExpansion,
             resourceResolver: dict.readResourceFile,
+            scale: settings.contentScale,
           );
         }
       }

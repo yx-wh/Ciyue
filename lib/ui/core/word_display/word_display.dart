@@ -44,6 +44,10 @@ class _WordDisplayState extends ConsumerState<WordDisplay> {
   final SearchController _searchController = SearchController();
   List<int>? _lastValidDictIds;
 
+  /// The tab bar's controller while the tab layout is on screen. Kept so
+  /// that [dispose] can tell whether the shared one is still ours.
+  TabController? _tabController;
+
   Widget? _buildSearchBar(Settings settings) {
     return buildTitle(widget.word, settings, controller: _searchController);
   }
@@ -97,6 +101,11 @@ class _WordDisplayState extends ConsumerState<WordDisplay> {
 
   @override
   void dispose() {
+    // Only clear the shared controller when it is still the one this entry
+    // handed over: a newer entry may have taken over already.
+    if (identical(dictTabController, _tabController)) {
+      dictTabController = null;
+    }
     _searchController.dispose();
     super.dispose();
   }
@@ -217,6 +226,10 @@ class _WordDisplayState extends ConsumerState<WordDisplay> {
               child: Builder(
                 builder: (context) {
                   final tabController = DefaultTabController.of(context);
+                  // The shortcut that switches dictionaries lives outside the
+                  // entry, so the tab bar hands its controller over.
+                  _tabController = tabController;
+                  dictTabController = tabController;
                   final searchBar = _buildSearchBar(settings);
 
                   return ListenableBuilder(
@@ -278,6 +291,11 @@ class _WordDisplayState extends ConsumerState<WordDisplay> {
               ),
             );
           }
+
+          // The expansion layout has no tab bar. Drop the controller left
+          // over from the tab layout so the shortcut cannot switch a tab
+          // that is no longer on screen.
+          dictTabController = null;
 
           return ExpansionWordDisplay(
             word: widget.word,

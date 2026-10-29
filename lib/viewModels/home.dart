@@ -381,8 +381,18 @@ class HomeModel extends ChangeNotifier {
     }
   }
 
-  void focusSearchBar() {
+  /// Moves the focus into the search bar.
+  ///
+  /// With [selectAll] the text already in the bar is selected, so typing
+  /// replaces it. This is what GoldenDict does when Esc is pressed.
+  void focusSearchBar({bool selectAll = false}) {
     searchBarFocusNode.requestFocus();
+    if (selectAll && searchController.text.isNotEmpty) {
+      searchController.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: searchController.text.length,
+      );
+    }
     notifyListeners();
   }
 

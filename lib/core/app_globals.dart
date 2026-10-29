@@ -18,6 +18,13 @@ String searchWordFromProcessText = "";
 // engine rather than the whole Android process.
 bool runningInFloatingWindow = false;
 
+// The controller of the dictionary tab bar.
+//
+// The shortcut that switches dictionaries lives in the home page, outside
+// the entry, so it needs a way to reach the tab bar's controller. The entry
+// sets it while the tab layout is on screen and clears it when it leaves.
+TabController? dictTabController;
+
 List<dynamic> ttsEngines = [];
 final List<dynamic> ttsLanguages = [];
 String? windowsWebview2Directory;

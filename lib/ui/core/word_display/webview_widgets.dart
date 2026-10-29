@@ -10,7 +10,9 @@ import "package:ciyue/repositories/dictionary.dart";
 import "package:ciyue/repositories/stardict.dart";
 import "package:ciyue/services/audio.dart";
 import "package:ciyue/src/generated/i18n/app_localizations.dart";
+import "package:ciyue/ui/core/word_display/content_scale_script.dart";
 import "package:ciyue/ui/core/word_display/entry_link_script.dart";
+import "package:ciyue/ui/core/word_display/key_bridge_script.dart";
 import "package:ciyue/ui/core/word_display/resource_url_script.dart";
 import "package:ciyue/ui/core/word_display/webview_helpers.dart";
 import "package:flutter/foundation.dart";
@@ -120,6 +122,8 @@ UnmodifiableListView<UserScript> dictionaryUserScripts({
   bool enableDarkReader = false,
   String darkReaderSource = "",
   bool isDarkTheme = false,
+  double contentScale = 1.0,
+  bool isExpansion = false,
 }) {
   // Tell the page which theme the app is in: the WebView's own night mode
   // follows the OS, not the app, so dictionary stylesheets cannot react to
@@ -195,6 +199,14 @@ UnmodifiableListView<UserScript> dictionaryUserScripts({
       source: themeScript,
       injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
     ),
+    UserScript(
+      source: contentScaleScript(contentScale),
+      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+    ),
+    UserScript(
+      source: keyBridgeScript(isExpansion: isExpansion),
+      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+    ),
     if (darkReaderScript != null)
       UserScript(
         source: darkReaderScript,
@@ -208,11 +220,60 @@ UnmodifiableListView<UserScript> dictionaryUserScripts({
   ]);
 }
 
+/// Registers the handler the key bridge script calls into.
+///
+/// * `Enter` looks up the text the user selected in the entry. The word is
+///   opened the same way a link inside the entry is, so it keeps the
+///   dictionary it was read from.
+/// * `PageUp`/`PageDown` are handed to [onPageKey], which only the
+///   expansion layout provides.
+void _registerKeyBridgeHandler(
+  InAppWebViewController controller, {
+  required BuildContext context,
+  required int? dictId,
+  void Function(String key)? onPageKey,
+}) {
+  controller.addJavaScriptHandler(
+    handlerName: "ciyueKey",
+    callback: (args) {
+      final name = args.isNotEmpty ? args[0].toString() : "";
+      final payload = args.length > 1 ? args[1].toString() : "";
+      if (name == "Enter") {
+        handleOpenWordNavigation(
+          context,
+          payload,
+          newTab: false,
+          dictId: dictId,
+        );
+      } else {
+        onPageKey?.call(name);
+      }
+      return null;
+    },
+  );
+}
+
+/// Pushes the entry zoom into a page that is already open.
+///
+/// The scale script only runs when a document starts, so a change made while
+/// an entry is on screen has to be applied to that page directly.
+void _applyContentScale(InAppWebViewController? controller, double scale) {
+  if (controller == null) return;
+  controller.evaluateJavascript(
+    source:
+        "window.ciyueSetZoom && window.ciyueSetZoom(${scale.toStringAsFixed(3)})",
+  );
+}
+
 class WebviewAndroid extends ConsumerStatefulWidget {
   final String word;
   final String content;
   final int dictId;
   final bool isExpansion;
+
+  /// Called with `PageUp`/`PageDown` when the entry is shown in the
+  /// expansion layout, where the WebView itself cannot scroll.
+  final void Function(String key)? onPageKey;
 
   const WebviewAndroid({
     super.key,
@@ -220,6 +281,7 @@ class WebviewAndroid extends ConsumerStatefulWidget {
     required this.content,
     required this.dictId,
     required this.isExpansion,
+    this.onPageKey,
   });
 
   @override
@@ -256,6 +318,15 @@ class _WebviewAndroidState extends ConsumerState<WebviewAndroid> {
   @override
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
+    // The scale script runs when a document starts, so a change made while an
+    // entry is on screen has to be pushed into the page that is already open.
+    ref.listen<double>(settingsProvider.select((s) => s.contentScale), (
+      previous,
+      next,
+    ) {
+      if (previous == next) return;
+      _applyContentScale(_webViewController, next);
+    });
     final dictManager = ref.watch(dictManagerProvider);
     final height =
         ref.watch(
@@ -347,6 +418,8 @@ class _WebviewAndroidState extends ConsumerState<WebviewAndroid> {
         customCss: settings.dictionaryCustomCss,
         background: settings.dictionaryBackgroundColor,
         isDarkTheme: !isLightTheme,
+        contentScale: settings.contentScale,
+        isExpansion: widget.isExpansion,
       ),
       initialData: InAppWebViewInitialData(
         data: normalizeDictionaryUrls(widget.content),
@@ -399,6 +472,13 @@ class _WebviewAndroidState extends ConsumerState<WebviewAndroid> {
             },
           );
         }
+
+        _registerKeyBridgeHandler(
+          controller,
+          context: context,
+          dictId: widget.dictId,
+          onPageKey: widget.onPageKey,
+        );
       },
       onPageCommitVisible: (controller, url) async {
         // Only the expansion panels need live height reports, and only they
@@ -430,6 +510,14 @@ class _WebviewAndroidState extends ConsumerState<WebviewAndroid> {
 """,
           );
         }
+
+        // A reload starts a fresh document, which drops the inline zoom the
+        // scale script set on the old one. Apply it again so the zoom
+        // survives looking up another word.
+        controller.evaluateJavascript(
+          source:
+              "window.ciyueSetZoom && window.ciyueSetZoom(${settings.contentScale.toStringAsFixed(3)})",
+        );
 
         final loadedDict = dictManager.dicts[widget.dictId];
         if (loadedDict is Mdict && loadedDict.fontName != null) {
@@ -557,12 +645,17 @@ class WebviewWindows extends ConsumerStatefulWidget {
   final int dictId;
   final bool isExpansion;
 
+  /// Called with `PageUp`/`PageDown` when the entry is shown in the
+  /// expansion layout, where the WebView itself cannot scroll.
+  final void Function(String key)? onPageKey;
+
   const WebviewWindows({
     super.key,
     this.word = "",
     required this.content,
     required this.dictId,
     this.isExpansion = false,
+    this.onPageKey,
   });
 
   @override
@@ -651,6 +744,15 @@ class _WebviewWindowsState extends ConsumerState<WebviewWindows> {
     final dictId = widget.dictId;
     final dictManager = ref.watch(dictManagerProvider);
     final settings = ref.watch(settingsProvider);
+    // The scale script runs when a document starts, so a change made while an
+    // entry is on screen has to be pushed into the page that is already open.
+    ref.listen<double>(settingsProvider.select((s) => s.contentScale), (
+      previous,
+      next,
+    ) {
+      if (previous == next) return;
+      _applyContentScale(_desktopController, next);
+    });
     final darkReaderSetting = ref.watch(dictionaryDarkReaderProvider);
     final port = dictManager.dicts[dictId]!.port;
     final Widget webview;
@@ -701,6 +803,8 @@ class _WebviewWindowsState extends ConsumerState<WebviewWindows> {
               enableDarkReader: darkReaderReady,
               darkReaderSource: darkReaderSource,
               isDarkTheme: !isLightTheme,
+              contentScale: settings.contentScale,
+              isExpansion: widget.isExpansion,
             ),
             initialSettings: webviewSettings,
             initialData: load.initialData,
@@ -736,6 +840,12 @@ class _WebviewWindowsState extends ConsumerState<WebviewWindows> {
                   },
                 );
               }
+              _registerKeyBridgeHandler(
+                controller,
+                context: context,
+                dictId: dictId,
+                onPageKey: widget.onPageKey,
+              );
               await _scheduleDesktopContentLoad(controller);
             },
             onPageCommitVisible: (controller, url) async {
@@ -777,6 +887,9 @@ class _WebviewWindowsState extends ConsumerState<WebviewWindows> {
 """,
                 );
               }
+              // A reload starts a fresh document, which drops the inline zoom
+              // the scale script set on the old one.
+              _applyContentScale(controller, settings.contentScale);
             },
             onRenderProcessGone: (controller, detail) async {
               talker.warning("InAppWebView render process gone, reloading...");
@@ -826,6 +939,8 @@ class _WebviewWindowsState extends ConsumerState<WebviewWindows> {
                   enableDarkReader: darkReaderReady,
                   darkReaderSource: darkReaderSource,
                   isDarkTheme: !isLightTheme,
+                  contentScale: settings.contentScale,
+                  isExpansion: widget.isExpansion,
                 ),
                 webViewEnvironment: snapshot.data?.environment,
                 initialSettings: webviewSettings,
@@ -862,6 +977,17 @@ class _WebviewWindowsState extends ConsumerState<WebviewWindows> {
                       }
                     },
                   );
+                  _registerKeyBridgeHandler(
+                    controller,
+                    context: context,
+                    dictId: dictId,
+                    onPageKey: widget.onPageKey,
+                  );
+                },
+                onPageCommitVisible: (controller, url) async {
+                  // A reload starts a fresh document, which drops the inline
+                  // zoom the scale script set on the old one.
+                  _applyContentScale(controller, settings.contentScale);
                 },
               );
             }

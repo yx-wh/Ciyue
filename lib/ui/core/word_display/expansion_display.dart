@@ -44,6 +44,7 @@ class _ExpansionWordDisplayState extends ConsumerState<ExpansionWordDisplay> {
   late List<bool> _isExpanded;
   late final SearchController _searchController;
   late final bool _ownsController;
+  final ScrollController _scrollController = ScrollController();
 
   Widget? _buildSearchBar(Settings settings) {
     return buildTitle(widget.word, settings, controller: _searchController);
@@ -61,10 +62,32 @@ class _ExpansionWordDisplayState extends ConsumerState<ExpansionWordDisplay> {
 
   @override
   void dispose() {
+    _scrollController.dispose();
     if (_ownsController) {
       _searchController.dispose();
     }
     super.dispose();
+  }
+
+  /// Pages the entry by one screen.
+  ///
+  /// In the expansion layout the WebView is as tall as its content and has
+  /// nothing of its own to scroll, so PageUp/PageDown have to move the outer
+  /// scroll container instead.
+  void _pageBy(String key) {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    final direction = key == "PageUp" ? -1.0 : 1.0;
+    final target =
+        (position.pixels + direction * position.viewportDimension * 0.9).clamp(
+          position.minScrollExtent,
+          position.maxScrollExtent,
+        );
+    _scrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+    );
   }
 
   @override
@@ -129,7 +152,7 @@ class _ExpansionWordDisplayState extends ConsumerState<ExpansionWordDisplay> {
           // Lazy-load the WebView only when expanded; collapsed panels
           // keep a placeholder instead of instantiating N WebViews upfront.
           body: expanded
-              ? buildWebView(widget.word, dictId, true)
+              ? buildWebView(widget.word, dictId, true, onPageKey: _pageBy)
               : const SizedBox.shrink(),
           isExpanded: expanded,
           canTapOnHeader: true,
@@ -222,6 +245,7 @@ class _ExpansionWordDisplayState extends ConsumerState<ExpansionWordDisplay> {
       body: Stack(
         children: [
           SingleChildScrollView(
+            controller: _scrollController,
             child: ExpansionPanelList(
               expansionCallback: (int index, bool isExpanded) {
                 setState(() {
