@@ -25,6 +25,13 @@ bool runningInFloatingWindow = false;
 // sets it while the tab layout is on screen and clears it when it leaves.
 TabController? dictTabController;
 
+// Pages the entry in the expansion layout.
+//
+// The expansion layout's scroll controller lives in the entry page, while
+// the shortcut that pages it sits in the home page, so the entry hands the
+// action over.
+void Function(String key)? expansionPageHandler;
+
 List<dynamic> ttsEngines = [];
 final List<dynamic> ttsLanguages = [];
 String? windowsWebview2Directory;

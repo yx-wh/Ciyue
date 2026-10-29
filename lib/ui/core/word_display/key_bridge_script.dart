@@ -9,10 +9,10 @@
 ///   with spaces: double-clicking only ever selects one part of a German
 ///   compound or a Japanese phrase, while selecting the whole phrase gets
 ///   the full form.
-/// * `PageUp`/`PageDown` are only forwarded in the expansion layout. There
-///   the WebView is as tall as its content and has nothing to scroll, so the
-///   outer scroll container has to do the paging.
-String keyBridgeScript({required bool isExpansion}) {
+/// * The zoom keys are taken over from the engine. It zooms the page on its
+///   own for them, which leaves the entry scrolling sideways; the app's own
+///   zoom keeps the text and the images in step instead.
+String keyBridgeScript() {
   return """
 (function () {
   function post(name, payload) {
@@ -21,7 +21,17 @@ String keyBridgeScript({required bool isExpansion}) {
     }
   }
   document.addEventListener('keydown', function (e) {
-    // Modified combinations belong to the app's own shortcuts.
+    if (e.ctrlKey && !e.altKey && !e.metaKey) {
+      var key = e.key;
+      if (key === '=' || key === '+' || key === '-' || key === '0') {
+        // The engine zooms the page for these before they reach anybody
+        // else, so they have to be caught here.
+        e.preventDefault();
+        post('Zoom', key);
+        return;
+      }
+    }
+    // The other modified combinations belong to the app's own shortcuts.
     if (e.ctrlKey || e.altKey || e.metaKey) return;
     var target = e.target;
     var tag = target && target.tagName ? target.tagName.toLowerCase() : '';
@@ -35,10 +45,6 @@ String keyBridgeScript({required bool isExpansion}) {
       e.preventDefault();
       post('Enter', text);
       return;
-    }
-    if ($isExpansion && (e.key === 'PageUp' || e.key === 'PageDown')) {
-      e.preventDefault();
-      post(e.key, '');
     }
   }, true);
 })();

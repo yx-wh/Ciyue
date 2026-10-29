@@ -14,6 +14,7 @@ import "package:ciyue/ui/core/word_display/content_scale_script.dart";
 import "package:ciyue/ui/core/word_display/entry_link_script.dart";
 import "package:ciyue/ui/core/word_display/key_bridge_script.dart";
 import "package:ciyue/ui/core/word_display/resource_url_script.dart";
+import "package:ciyue/ui/core/word_display/selection_style_script.dart";
 import "package:ciyue/ui/core/word_display/webview_helpers.dart";
 import "package:flutter/foundation.dart";
 import "package:flutter/gestures.dart";
@@ -123,7 +124,6 @@ UnmodifiableListView<UserScript> dictionaryUserScripts({
   String darkReaderSource = "",
   bool isDarkTheme = false,
   double contentScale = 1.0,
-  bool isExpansion = false,
 }) {
   // Tell the page which theme the app is in: the WebView's own night mode
   // follows the OS, not the app, so dictionary stylesheets cannot react to
@@ -204,7 +204,11 @@ UnmodifiableListView<UserScript> dictionaryUserScripts({
       injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
     ),
     UserScript(
-      source: keyBridgeScript(isExpansion: isExpansion),
+      source: keyBridgeScript(),
+      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+    ),
+    UserScript(
+      source: selectionStyleScript(),
       injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
     ),
     if (darkReaderScript != null)
@@ -225,13 +229,13 @@ UnmodifiableListView<UserScript> dictionaryUserScripts({
 /// * `Enter` looks up the text the user selected in the entry. The word is
 ///   opened the same way a link inside the entry is, so it keeps the
 ///   dictionary it was read from.
-/// * `PageUp`/`PageDown` are handed to [onPageKey], which only the
-///   expansion layout provides.
+/// * `Zoom` is a zoom key the engine would have turned into a page zoom of
+///   its own; the app zooms the entry instead.
 void _registerKeyBridgeHandler(
   InAppWebViewController controller, {
   required BuildContext context,
   required int? dictId,
-  void Function(String key)? onPageKey,
+  required void Function(String key) onZoomKey,
 }) {
   controller.addJavaScriptHandler(
     handlerName: "ciyueKey",
@@ -245,8 +249,8 @@ void _registerKeyBridgeHandler(
           newTab: false,
           dictId: dictId,
         );
-      } else {
-        onPageKey?.call(name);
+      } else if (name == "Zoom") {
+        onZoomKey(payload);
       }
       return null;
     },
@@ -271,17 +275,12 @@ class WebviewAndroid extends ConsumerStatefulWidget {
   final int dictId;
   final bool isExpansion;
 
-  /// Called with `PageUp`/`PageDown` when the entry is shown in the
-  /// expansion layout, where the WebView itself cannot scroll.
-  final void Function(String key)? onPageKey;
-
   const WebviewAndroid({
     super.key,
     this.word = "",
     required this.content,
     required this.dictId,
     required this.isExpansion,
-    this.onPageKey,
   });
 
   @override
@@ -386,8 +385,14 @@ class _WebviewAndroidState extends ConsumerState<WebviewAndroid> {
             id: 2,
             title: locale.lookup,
             action: () async {
+              // A right click does not raise the long-press callback that
+              // fills in the selection, so it is read from the WebView
+              // here. With nothing selected there is nothing to look up.
+              final text = await _webViewController?.getSelectedText() ?? "";
+              final word = text.trim();
+              if (word.isEmpty || !context.mounted) return;
               context.push(
-                "/word/${Uri.encodeComponent(_selectedText)}?dictId=${widget.dictId}",
+                "/word/${Uri.encodeComponent(word)}?dictId=${widget.dictId}",
               );
             },
           ),
@@ -419,7 +424,6 @@ class _WebviewAndroidState extends ConsumerState<WebviewAndroid> {
         background: settings.dictionaryBackgroundColor,
         isDarkTheme: !isLightTheme,
         contentScale: settings.contentScale,
-        isExpansion: widget.isExpansion,
       ),
       initialData: InAppWebViewInitialData(
         data: normalizeDictionaryUrls(widget.content),
@@ -477,7 +481,7 @@ class _WebviewAndroidState extends ConsumerState<WebviewAndroid> {
           controller,
           context: context,
           dictId: widget.dictId,
-          onPageKey: widget.onPageKey,
+          onZoomKey: (key) => applyZoomKey(ref.read(settingsProvider), key),
         );
       },
       onPageCommitVisible: (controller, url) async {
@@ -645,17 +649,12 @@ class WebviewWindows extends ConsumerStatefulWidget {
   final int dictId;
   final bool isExpansion;
 
-  /// Called with `PageUp`/`PageDown` when the entry is shown in the
-  /// expansion layout, where the WebView itself cannot scroll.
-  final void Function(String key)? onPageKey;
-
   const WebviewWindows({
     super.key,
     this.word = "",
     required this.content,
     required this.dictId,
     this.isExpansion = false,
-    this.onPageKey,
   });
 
   @override
@@ -804,7 +803,6 @@ class _WebviewWindowsState extends ConsumerState<WebviewWindows> {
               darkReaderSource: darkReaderSource,
               isDarkTheme: !isLightTheme,
               contentScale: settings.contentScale,
-              isExpansion: widget.isExpansion,
             ),
             initialSettings: webviewSettings,
             initialData: load.initialData,
@@ -844,7 +842,8 @@ class _WebviewWindowsState extends ConsumerState<WebviewWindows> {
                 controller,
                 context: context,
                 dictId: dictId,
-                onPageKey: widget.onPageKey,
+                onZoomKey: (key) =>
+                    applyZoomKey(ref.read(settingsProvider), key),
               );
               await _scheduleDesktopContentLoad(controller);
             },
@@ -940,7 +939,6 @@ class _WebviewWindowsState extends ConsumerState<WebviewWindows> {
                   darkReaderSource: darkReaderSource,
                   isDarkTheme: !isLightTheme,
                   contentScale: settings.contentScale,
-                  isExpansion: widget.isExpansion,
                 ),
                 webViewEnvironment: snapshot.data?.environment,
                 initialSettings: webviewSettings,
@@ -981,7 +979,8 @@ class _WebviewWindowsState extends ConsumerState<WebviewWindows> {
                     controller,
                     context: context,
                     dictId: dictId,
-                    onPageKey: widget.onPageKey,
+                    onZoomKey: (key) =>
+                        applyZoomKey(ref.read(settingsProvider), key),
                   );
                 },
                 onPageCommitVisible: (controller, url) async {

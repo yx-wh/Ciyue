@@ -62,6 +62,9 @@ class _ExpansionWordDisplayState extends ConsumerState<ExpansionWordDisplay> {
 
   @override
   void dispose() {
+    if (identical(expansionPageHandler, _pageBy)) {
+      expansionPageHandler = null;
+    }
     _scrollController.dispose();
     if (_ownsController) {
       _searchController.dispose();
@@ -97,6 +100,9 @@ class _ExpansionWordDisplayState extends ConsumerState<ExpansionWordDisplay> {
     _searchController = widget.searchController ?? SearchController();
     _panelIds = _getPanelIds(settings.aiExplainWord, widget.validDictIds);
     _isExpanded = List<bool>.filled(_panelIds.length, true);
+    // The shortcut that pages the entry lives in the home page, outside the
+    // entry, so the scroll controller is handed over to it.
+    expansionPageHandler = _pageBy;
   }
 
   List<Object> _getPanelIds(bool includeAI, List<int> validDictIds) => [
@@ -152,7 +158,7 @@ class _ExpansionWordDisplayState extends ConsumerState<ExpansionWordDisplay> {
           // Lazy-load the WebView only when expanded; collapsed panels
           // keep a placeholder instead of instantiating N WebViews upfront.
           body: expanded
-              ? buildWebView(widget.word, dictId, true, onPageKey: _pageBy)
+              ? buildWebView(widget.word, dictId, true)
               : const SizedBox.shrink(),
           isExpanded: expanded,
           canTapOnHeader: true,

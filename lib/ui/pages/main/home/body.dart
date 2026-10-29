@@ -2,8 +2,11 @@ import "dart:async";
 
 import "package:ciyue/core/app_globals.dart";
 import "package:ciyue/core/providers.dart";
+import "package:ciyue/repositories/settings.dart";
 import "package:ciyue/src/generated/i18n/app_localizations.dart";
+import "package:ciyue/ui/core/search_bar.dart";
 import "package:ciyue/ui/core/word_display/buttons.dart";
+import "package:ciyue/ui/core/word_display/content_scale_script.dart";
 import "package:ciyue/ui/core/word_display/utils.dart";
 import "package:ciyue/ui/core/word_display/word_display.dart";
 import "package:ciyue/utils.dart";
@@ -156,16 +159,17 @@ class _DesktopHomeSplitView extends ConsumerWidget {
     unawaited(ref.read(dictManagerModelProvider).switchToGroupAt(position));
   }
 
-  /// Zooms the dictionary entry content in or out.
-  void _changeContentScale(WidgetRef ref, double delta) {
+  /// Pages the entry in the expansion layout.
+  ///
+  /// There the WebView is as tall as its content and has nothing of its own
+  /// to scroll, so the outer scroll container has to do it. In the tab layout
+  /// the WebView scrolls on its own and the keys are left to it.
+  void _pageEntry(WidgetRef ref, String key) {
     final settings = ref.read(settingsProvider);
-    unawaited(settings.setContentScale(settings.contentScale + delta));
-  }
-
-  /// Puts the dictionary entry content back to its normal size.
-  void _resetContentScale(WidgetRef ref) {
-    final settings = ref.read(settingsProvider);
-    unawaited(settings.setContentScale(1.0));
+    if (settings.dictionarySwitchStyle != DictionarySwitchStyle.expansion) {
+      return;
+    }
+    expansionPageHandler?.call(key);
   }
 
   @override
@@ -243,16 +247,27 @@ class _DesktopHomeSplitView extends ConsumerWidget {
           }
         },
         const SingleActivator(LogicalKeyboardKey.escape): () {
-          homeModel.focusSearchBar(selectAll: true);
+          homeModel.focusSearchBar();
           if (homeModel.searchController.isAttached) {
             homeModel.searchController.openView();
           }
+          // The focus node only gets a context once the field is focused,
+          // so the selection has to wait for the next frame.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            selectAllTextInField(homeModel.searchBarFocusNode);
+          });
         },
         const SingleActivator(LogicalKeyboardKey.pageDown, control: true): () {
           homeModel.nextTab();
         },
         const SingleActivator(LogicalKeyboardKey.pageUp, control: true): () {
           homeModel.previousTab();
+        },
+        const SingleActivator(LogicalKeyboardKey.pageDown): () {
+          _pageEntry(ref, "PageDown");
+        },
+        const SingleActivator(LogicalKeyboardKey.pageUp): () {
+          _pageEntry(ref, "PageUp");
         },
         const SingleActivator(
           LogicalKeyboardKey.keyS,
@@ -262,20 +277,20 @@ class _DesktopHomeSplitView extends ConsumerWidget {
           unawaited(ref.read(audioModelProvider).stopAudio());
         },
         const SingleActivator(LogicalKeyboardKey.equal, control: true): () {
-          _changeContentScale(ref, 0.1);
+          changeContentScale(ref.read(settingsProvider), 0.1);
         },
         const SingleActivator(
           LogicalKeyboardKey.equal,
           control: true,
           shift: true,
         ): () {
-          _changeContentScale(ref, 0.1);
+          changeContentScale(ref.read(settingsProvider), 0.1);
         },
         const SingleActivator(LogicalKeyboardKey.minus, control: true): () {
-          _changeContentScale(ref, -0.1);
+          changeContentScale(ref.read(settingsProvider), -0.1);
         },
         const SingleActivator(LogicalKeyboardKey.digit0, control: true): () {
-          _resetContentScale(ref);
+          resetContentScale(ref.read(settingsProvider));
         },
         ..._buildDictionaryTabShortcuts(ref, homeModel),
         ..._buildGroupShortcuts(ref),

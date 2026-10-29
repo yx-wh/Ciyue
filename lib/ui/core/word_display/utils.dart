@@ -59,18 +59,8 @@ Widget withFloatingWindowBackHandler(BuildContext context, Widget child) {
   );
 }
 
-Widget buildWebView(
-  String word,
-  int id,
-  bool isExpansion, {
-  void Function(String key)? onPageKey,
-}) {
-  return _WordContentView(
-    word: word,
-    dictId: id,
-    isExpansion: isExpansion,
-    onPageKey: onPageKey,
-  );
+Widget buildWebView(String word, int id, bool isExpansion) {
+  return _WordContentView(word: word, dictId: id, isExpansion: isExpansion);
 }
 
 class _WordContentView extends ConsumerStatefulWidget {
@@ -78,15 +68,10 @@ class _WordContentView extends ConsumerStatefulWidget {
   final int dictId;
   final bool isExpansion;
 
-  /// Called with `PageUp`/`PageDown` when the entry is shown in the
-  /// expansion layout, where the WebView itself cannot scroll.
-  final void Function(String key)? onPageKey;
-
   const _WordContentView({
     required this.word,
     required this.dictId,
     required this.isExpansion,
-    this.onPageKey,
   });
 
   @override
@@ -109,7 +94,6 @@ class _WordContentViewState extends ConsumerState<_WordContentView> {
         content: content,
         dictId: widget.dictId,
         isExpansion: widget.isExpansion,
-        onPageKey: widget.onPageKey,
       );
     } else if (isDesktop()) {
       return WebviewWindows(
@@ -117,7 +101,6 @@ class _WordContentViewState extends ConsumerState<_WordContentView> {
         content: content,
         dictId: widget.dictId,
         isExpansion: widget.isExpansion,
-        onPageKey: widget.onPageKey,
       );
     } else {
       return FakeWebViewByAI(html: content);

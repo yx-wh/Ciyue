@@ -7,6 +7,26 @@ import "package:material_ui/material_ui.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:go_router/go_router.dart";
 
+/// Selects the whole text in the field that owns [focusNode].
+///
+/// The search bar renders its own text editing controller, and the
+/// [SearchController] only carries the text along: setting its selection
+/// never reaches the field. The selection therefore has to go through the
+/// field itself.
+void selectAllTextInField(FocusNode focusNode) {
+  final context = focusNode.context;
+  if (context == null) return;
+  final controller = context
+      .findAncestorWidgetOfExactType<EditableText>()
+      ?.controller;
+  if (controller == null) return;
+  if (controller.text.isEmpty) return;
+  controller.selection = TextSelection(
+    baseOffset: 0,
+    extentOffset: controller.text.length,
+  );
+}
+
 class WordSearchBarWithSuggestions extends ConsumerStatefulWidget {
   final String word;
   final SearchController? controller;
