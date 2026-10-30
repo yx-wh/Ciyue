@@ -408,10 +408,12 @@ class _WebviewAndroidState extends ConsumerState<WebviewAndroid> {
             id: 2,
             title: locale.lookup,
             action: () async {
-              // The word comes from onCreateContextMenu: a right click does
-              // not raise the long-press selection, so the live one can be
-              // empty by now.
-              final word = _selectedText.trim();
+              // A right click does not raise the long-press selection, and
+              // the menu can be clicked before onCreateContextMenu has read
+              // it; the word the bridge captured is the reliable one.
+              final word = _contextWord.isNotEmpty
+                  ? _contextWord.trim()
+                  : _selectedText.trim();
               if (word.isEmpty || !context.mounted) return;
               context.push(
                 "/word/${Uri.encodeComponent(word)}?dictId=${widget.dictId}",
@@ -435,9 +437,9 @@ class _WebviewAndroidState extends ConsumerState<WebviewAndroid> {
         onCreateContextMenu: (hitTestResult) async {
           final selected = await _webViewController?.getSelectedText() ?? "";
           // The right click word is captured in JS as well, because the native
-          // menu can clear the selection before this runs.
-          _selectedText = selected.trim().isNotEmpty ? selected : _contextWord;
-          _contextWord = "";
+          // menu can clear the selection before this runs. Keep it until the
+          // next right click replaces it.
+          _selectedText = _contextWord.isNotEmpty ? _contextWord : selected;
         },
       );
       _cachedContextMenu = contextMenu;

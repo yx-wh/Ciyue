@@ -110,9 +110,8 @@ String contextWordScript() {
   return """
 (function () {
   function postWord(word) {
-    if (!word) return;
     if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-      window.flutter_inappwebview.callHandler('ciyueKey', 'ContextWord', word);
+      window.flutter_inappwebview.callHandler('ciyueKey', 'ContextWord', word || '');
     }
   }
   function selectWordAt(x, y) {
