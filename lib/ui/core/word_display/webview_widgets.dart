@@ -209,6 +209,10 @@ UnmodifiableListView<UserScript> dictionaryUserScripts({
       injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
     ),
     UserScript(
+      source: contextWordScript(),
+      injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+    ),
+    UserScript(
       source: selectionStyleScript(),
       injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
     ),

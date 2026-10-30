@@ -60,3 +60,42 @@ String keyBridgeScript() {
 })();
 """;
 }
+
+/// Selects the word under the pointer on a right click.
+///
+/// A right click does not raise the long press selection, so the context menu
+/// had nothing to look up: this selects the word the menu then reads back. The
+/// word granularity is the browser's own, which also copes with the languages
+/// that do not separate words with spaces.
+String contextWordScript() {
+  return """
+(function () {
+  function selectWordAt(x, y) {
+    if (!document.caretRangeFromPoint) return false;
+    var range = document.caretRangeFromPoint(x, y);
+    if (!range) return false;
+    var selection = window.getSelection();
+    if (!selection) return false;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    if (selection.modify) {
+      selection.modify('move', 'backward', 'word');
+      selection.modify('extend', 'forward', 'word');
+    }
+    return true;
+  }
+  // pointerdown fires before the native menu and carries the button, so the
+  // selection is ready by the time the menu asks for it.
+  document.addEventListener('pointerdown', function (e) {
+    if (e.button === 2) selectWordAt(e.clientX, e.clientY);
+  }, true);
+  // Fallback for a WebView that only dispatches contextmenu.
+  document.addEventListener('contextmenu', function (e) {
+    var selection = window.getSelection();
+    if (!selection || selection.toString().trim() === '') {
+      selectWordAt(e.clientX, e.clientY);
+    }
+  }, true);
+})();
+""";
+}

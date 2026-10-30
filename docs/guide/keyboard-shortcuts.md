@@ -35,7 +35,7 @@ Selecting beats double-clicking, because double-clicking only ever selects one p
 | Japanese | `日本` of `日本語词典` | `日本語词典` |
 | Chinese | `现代` of `现代汉语词典` | `现代汉语词典` |
 
-On Android the long-press menu offers the same lookup next to *Copy* and *Read aloud*.
+On Android the long-press menu offers the same lookup next to *Copy* and *Read aloud*. Right-clicking a word selects it as well, so the menu looks up that word.
 
 ## Tabs
 
