@@ -23,7 +23,6 @@ import "package:material_ui/material_ui.dart";
 import "package:flutter/services.dart";
 import "package:flutter_inappwebview/flutter_inappwebview.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
-import "package:go_router/go_router.dart";
 import "package:html_unescape/html_unescape_small.dart";
 
 typedef DesktopWebViewLoad = ({
@@ -415,8 +414,13 @@ class _WebviewAndroidState extends ConsumerState<WebviewAndroid> {
                   ? _contextWord.trim()
                   : _selectedText.trim();
               if (word.isEmpty || !context.mounted) return;
-              context.push(
-                "/word/${Uri.encodeComponent(word)}?dictId=${widget.dictId}",
+              // The same path Enter uses: in the split view it updates the
+              // entry pane instead of pushing a full-screen word page.
+              handleOpenWordNavigation(
+                context,
+                word,
+                newTab: false,
+                dictId: widget.dictId,
               );
             },
           ),
