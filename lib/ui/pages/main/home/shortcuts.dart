@@ -353,10 +353,18 @@ class _SearchEscapeCloserState extends ConsumerState<SearchEscapeCloser> {
         HardwareKeyboard.instance.isMetaPressed) {
       return false;
     }
-    final controller = ref.read(homeModelProvider).searchController;
-    if (!controller.isOpen) return false;
-    controller.closeView(null);
-    return true;
+    final homeModel = ref.read(homeModelProvider);
+    if (homeModel.searchController.isOpen) {
+      homeModel.searchController.closeView(null);
+      return true;
+    }
+    // The text field swallows Escape (DoNothingAndStopPropagation), so the
+    // second press has to be handled here rather than in CallbackShortcuts.
+    if (homeModel.searchBarFocusNode.hasFocus) {
+      _focusSearchAndSelectAll(ref);
+      return true;
+    }
+    return false;
   }
 
   @override
