@@ -359,8 +359,10 @@ class _SearchEscapeCloserState extends ConsumerState<SearchEscapeCloser> {
       return true;
     }
     // The text field swallows Escape (DoNothingAndStopPropagation), so the
-    // second press has to be handled here rather than in CallbackShortcuts.
-    if (homeModel.searchBarFocusNode.hasFocus) {
+    // press has to be handled here rather than in CallbackShortcuts. The
+    // focus may also have moved to the app bar, so do not require it on the
+    // search box.
+    if (ModalRoute.of(context)?.isCurrent ?? false) {
       _focusSearchAndSelectAll(ref);
       return true;
     }

@@ -10,7 +10,6 @@ import "package:ciyue/repositories/settings.dart";
 import "package:ciyue/services/floating_window.dart";
 import "package:ciyue/services/platform.dart";
 import "package:ciyue/src/generated/i18n/app_localizations.dart";
-import "package:ciyue/ui/pages/main/home/shortcuts.dart";
 import "package:ciyue/utils.dart";
 import "package:drift/drift.dart" as drift;
 import "package:dynamic_color/dynamic_color.dart";
@@ -320,11 +319,9 @@ class _CiyueState extends State<Ciyue> with WidgetsBindingObserver {
           // Some dependencies still use package:flutter/material.dart.
           // Keep their legacy ThemeData and MaterialLocalizations working
           // while they are migrated to package:material_ui.
-          return SearchEscapeCloser(
-            // ignore: deprecated_member_use
-            child: MaterialUiCompatibilityBridge(
-              child: smartDialogBuilder(context, child),
-            ),
+          // ignore: deprecated_member_use
+          return MaterialUiCompatibilityBridge(
+            child: smartDialogBuilder(context, child),
           );
         },
       ),

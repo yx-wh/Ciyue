@@ -32,19 +32,19 @@ class HomeBody extends ConsumerWidget {
     ref.watch(homeModelProvider.select((value) => value.state));
     ref.watch(dictManagerModelProvider.select((value) => value.isEmpty));
 
-    if (isLargeScreen(context)) {
-      return const _DesktopHomeSplitView();
-    }
+    final content = isLargeScreen(context)
+        ? const _DesktopHomeSplitView()
+        : const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ActionButtons(),
+              HistoryLabel(),
+              HistoryList(),
+              BottomSearchBar(),
+            ],
+          );
 
-    return const Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        ActionButtons(),
-        HistoryLabel(),
-        HistoryList(),
-        BottomSearchBar(),
-      ],
-    );
+    return SearchEscapeCloser(child: content);
   }
 }
 
