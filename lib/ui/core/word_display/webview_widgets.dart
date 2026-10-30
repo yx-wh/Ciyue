@@ -11,6 +11,7 @@ import "package:ciyue/repositories/stardict.dart";
 import "package:ciyue/services/audio.dart";
 import "package:ciyue/src/generated/i18n/app_localizations.dart";
 import "package:ciyue/ui/core/word_display/content_scale_script.dart";
+import "package:ciyue/ui/core/word_display/entry_anchor.dart";
 import "package:ciyue/ui/core/word_display/entry_link_script.dart";
 import "package:ciyue/ui/core/word_display/key_bridge_script.dart";
 import "package:ciyue/ui/core/word_display/resource_url_script.dart";
@@ -290,11 +291,61 @@ void _applyContentScale(InAppWebViewController? controller, double scale) {
   );
 }
 
+/// Scrolls the loaded page to [anchor].
+///
+/// The anchor target only exists once the document is in the DOM, and images
+/// or fonts that arrive afterwards can move it, so a miss earns one retry.
+/// Beyond that the request is dropped: polling a page that has no such element
+/// would only burn frames.
+Future<void> _scrollToAnchor(
+  InAppWebViewController controller,
+  String anchor, {
+  int attempt = 0,
+}) async {
+  var found = false;
+  try {
+    found =
+        await controller.evaluateJavascript(
+          source: scrollToAnchorScript(anchor),
+        ) ==
+        true;
+  } catch (e) {
+    talker.warning("Failed to scroll to anchor $anchor: $e");
+  }
+  if (found || attempt >= 1) return;
+  await Future<void>.delayed(const Duration(milliseconds: 150));
+  await _scrollToAnchor(controller, anchor, attempt: attempt + 1);
+}
+
+/// Applies [anchor] and consumes the pending request, so a rebuild does not
+/// scroll the entry a second time.
+Future<void> _applyPendingAnchor(
+  InAppWebViewController controller,
+  WidgetRef ref,
+  String word,
+  String? anchor,
+) async {
+  if (anchor == null || anchor.isEmpty) return;
+  await _scrollToAnchor(controller, anchor);
+  try {
+    final pending = ref.read(pendingAnchorProvider);
+    if (pending?.word == word && pending?.anchor == anchor) {
+      ref.read(pendingAnchorProvider.notifier).clear();
+    }
+  } catch (_) {
+    // The widget was disposed while the scroll was in flight; dropping the
+    // request is harmless, a later entry can ask for its own anchor.
+  }
+}
+
 class WebviewAndroid extends ConsumerStatefulWidget {
   final String word;
   final String content;
   final int dictId;
   final bool isExpansion;
+
+  /// Entry anchor to scroll to once the page has loaded, if any.
+  final String? anchor;
 
   const WebviewAndroid({
     super.key,
@@ -302,6 +353,7 @@ class WebviewAndroid extends ConsumerStatefulWidget {
     required this.content,
     required this.dictId,
     required this.isExpansion,
+    this.anchor,
   });
 
   @override
@@ -326,6 +378,19 @@ class _WebviewAndroidState extends ConsumerState<WebviewAndroid> {
         encoding: "utf-8",
         baseUrl: WebUri("http://ciyue.internal/"),
       );
+      return;
+    }
+
+    // The same entry can be asked to scroll again, because a second anchor
+    // link was tapped without the content changing; there is no reload whose
+    // completion could carry the anchor.
+    if (widget.anchor != oldWidget.anchor && widget.anchor != null) {
+      final controller = _webViewController;
+      if (controller != null) {
+        unawaited(
+          _applyPendingAnchor(controller, ref, widget.word, widget.anchor),
+        );
+      }
     }
   }
 
@@ -480,6 +545,9 @@ class _WebviewAndroidState extends ConsumerState<WebviewAndroid> {
         widget.dictId,
         context,
       ),
+      onLoadStop: (controller, url) async {
+        await _applyPendingAnchor(controller, ref, widget.word, widget.anchor);
+      },
       onWebViewCreated: (controller) async {
         _webViewController = controller;
 
@@ -683,12 +751,16 @@ class WebviewWindows extends ConsumerStatefulWidget {
   final int dictId;
   final bool isExpansion;
 
+  /// Entry anchor to scroll to once the page has loaded, if any.
+  final String? anchor;
+
   const WebviewWindows({
     super.key,
     this.word = "",
     required this.content,
     required this.dictId,
     this.isExpansion = false,
+    this.anchor,
   });
 
   @override
@@ -704,11 +776,25 @@ class _WebviewWindowsState extends ConsumerState<WebviewWindows> {
   @override
   void didUpdateWidget(WebviewWindows oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.content != oldWidget.content ||
-        widget.dictId != oldWidget.dictId) {
+    final contentChanged =
+        widget.content != oldWidget.content ||
+        widget.dictId != oldWidget.dictId;
+    if (contentChanged) {
       final controller = _desktopController;
       if (controller != null) {
         unawaited(_scheduleDesktopContentLoad(controller));
+      }
+      return;
+    }
+
+    // A new anchor for the entry already on screen: no reload will happen, so
+    // the scroll is applied straight away.
+    if (widget.anchor != oldWidget.anchor && widget.anchor != null) {
+      final controller = _desktopController;
+      if (controller != null) {
+        unawaited(
+          _applyPendingAnchor(controller, ref, widget.word, widget.anchor),
+        );
       }
     }
   }
@@ -846,6 +932,14 @@ class _WebviewWindowsState extends ConsumerState<WebviewWindows> {
               dictId,
               context,
             ),
+            onLoadStop: (controller, url) async {
+              await _applyPendingAnchor(
+                controller,
+                ref,
+                widget.word,
+                widget.anchor,
+              );
+            },
             onWebViewCreated: (controller) async {
               _desktopController = controller;
               controller.addJavaScriptHandler(
@@ -992,6 +1086,14 @@ class _WebviewWindowsState extends ConsumerState<WebviewWindows> {
                   dictId,
                   context,
                 ),
+                onLoadStop: (controller, url) async {
+                  await _applyPendingAnchor(
+                    controller,
+                    ref,
+                    widget.word,
+                    widget.anchor,
+                  );
+                },
                 onWebViewCreated: (controller) async {
                   // The initial load is covered by initialUrlRequest; keep
                   // the controller so didUpdateWidget can reload content
