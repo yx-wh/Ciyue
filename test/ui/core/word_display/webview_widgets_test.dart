@@ -57,9 +57,9 @@ void main() {
     );
 
     // Resource normalisation + link normalisation + app theme marker + the
-    // content zoom + the key bridge + the selection highlight; Dark Reader
-    // stays off.
-    expect(scripts, hasLength(6));
+    // content zoom + the key bridge + the right click word selection + the
+    // selection highlight; Dark Reader stays off.
+    expect(scripts, hasLength(7));
     expect(
       scripts.every((script) => !script.source.contains("DarkReader.enable")),
       isTrue,
