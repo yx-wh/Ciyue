@@ -12,6 +12,8 @@
 /// * The zoom keys are taken over from the engine. It zooms the page on its
 ///   own for them, which leaves the entry scrolling sideways; the app's own
 ///   zoom keeps the text and the images in step instead.
+/// * `Esc` moves the focus into the search box and selects its text, the same
+///   as the app-level shortcut does when Flutter holds the focus.
 String keyBridgeScript() {
   return """
 (function () {
@@ -33,6 +35,14 @@ String keyBridgeScript() {
     }
     // The other modified combinations belong to the app's own shortcuts.
     if (e.ctrlKey || e.altKey || e.metaKey) return;
+
+    // Esc moves the focus into the search box and selects its text.
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      post('Escape');
+      return;
+    }
+
     var target = e.target;
     var tag = target && target.tagName ? target.tagName.toLowerCase() : '';
     // Enter belongs to the input the user is typing in.
