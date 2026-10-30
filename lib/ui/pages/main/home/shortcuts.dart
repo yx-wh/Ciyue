@@ -104,11 +104,13 @@ Map<SingleActivator, VoidCallback> homeShortcutBindings(
   };
 }
 
+/// Moves the focus into the inline search box.
+///
+/// The search view is a route of its own, and opening it here would take the
+/// focus out of the home page, where the shortcuts live. Typing opens it the
+/// normal way.
 void _focusSearchBar(HomeModel homeModel) {
   homeModel.focusSearchBar();
-  if (homeModel.searchController.isAttached) {
-    homeModel.searchController.openView();
-  }
 }
 
 void _focusSearchAndSelectAll(WidgetRef ref) {
@@ -314,4 +316,49 @@ LogicalKeyboardKey? _logicalKeyForCode(String code) {
       return LogicalKeyboardKey.digit9;
   }
   return null;
+}
+
+/// Closes the search view when Esc is pressed.
+///
+/// The search view is a route of its own: it sits above the home page's
+/// [CallbackShortcuts] and does not handle Esc itself, so once it was opened
+/// the key could neither dismiss it nor reach the shortcuts behind it.
+class SearchEscapeCloser extends ConsumerStatefulWidget {
+  final Widget child;
+
+  const SearchEscapeCloser({super.key, required this.child});
+
+  @override
+  ConsumerState<SearchEscapeCloser> createState() => _SearchEscapeCloserState();
+}
+
+class _SearchEscapeCloserState extends ConsumerState<SearchEscapeCloser> {
+  @override
+  void initState() {
+    super.initState();
+    HardwareKeyboard.instance.addHandler(_handleKey);
+  }
+
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_handleKey);
+    super.dispose();
+  }
+
+  bool _handleKey(KeyEvent event) {
+    if (event is! KeyDownEvent) return false;
+    if (event.logicalKey != LogicalKeyboardKey.escape) return false;
+    if (HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isAltPressed ||
+        HardwareKeyboard.instance.isMetaPressed) {
+      return false;
+    }
+    final controller = ref.read(homeModelProvider).searchController;
+    if (!controller.isOpen) return false;
+    controller.closeView(null);
+    return true;
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
