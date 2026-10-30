@@ -52,7 +52,8 @@ The browser-like tabs at the top hold one word each.
 | `Ctrl`+`Tab` | Go to the next tab |
 | `Ctrl`+`Shift`+`Tab` | Go to the previous tab |
 | `Ctrl`+`PgDn` / `Ctrl`+`PgUp` | Go to the next / previous tab |
-| `←` / `→` | Go to the previous / next word, in the entry |
+
+In the full-screen word list on mobile, `←` / `→` move to the previous / next word.
 
 ### Dictionary groups
 
@@ -82,7 +83,7 @@ In the **Expansion** style there are no such tabs, and these keys do nothing at 
 |---|---|
 | `Ctrl`+`R` | Read the word aloud |
 | `Ctrl`+`Shift`+`S` | Stop the playback |
-| `↑` / `↓` | Pick the previous / next entry in the history |
+| `Ctrl`+`↑` / `Ctrl`+`↓` | Pick the previous / next entry in the history |
 
 ## Zooming the entry
 
@@ -110,3 +111,4 @@ Only the entry is scaled, the rest of the window keeps its size. The level is re
 - The group and dictionary tab shortcuts only act while an entry is on screen.
 - On a keyboard where the window manager takes `Alt`+<number>, the dictionary tabs cannot be reached that way.
 - `Ctrl`+`PgUp` and `Ctrl`+`PgDn` change the word tab; the same keys without `Ctrl` scroll the entry in the expansion layout.
+- On the desktop layout the arrow keys move the keyboard focus between controls; `Enter` or `Space` activates the focused one.

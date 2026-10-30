@@ -73,10 +73,13 @@ class HomeBody extends ConsumerWidget {
 class _DesktopHomeSplitView extends ConsumerWidget {
   const _DesktopHomeSplitView();
 
+  /// Moves the selected word through the history by [delta] entries.
+  ///
+  /// The plain arrow keys are left to Flutter's focus traversal, so this lives
+  /// on `Ctrl`+`↑`/`Ctrl`+`↓`.
   void _selectAdjacentHistory(
-    BuildContext context,
-    HomeModel homeModel,
     HistoryModel historyModel,
+    HomeModel homeModel,
     int delta,
   ) {
     final history = historyModel.history;
@@ -178,7 +181,6 @@ class _DesktopHomeSplitView extends ConsumerWidget {
     // inside it) on every history write or tab mutation is expensive.
     // Imperative calls below use ref.read so they don't subscribe.
     final homeModel = ref.read(homeModelProvider);
-    final historyModel = ref.read(historyModelProvider);
     final selectedWord = ref.watch(
       homeModelProvider.select((model) => model.selectedWord),
     );
@@ -231,14 +233,22 @@ class _DesktopHomeSplitView extends ConsumerWidget {
         ): () {
           homeModel.previousTab();
         },
-        const SingleActivator(LogicalKeyboardKey.arrowDown): () {
+        const SingleActivator(LogicalKeyboardKey.arrowDown, control: true): () {
           if (!homeModel.searchBarFocusNode.hasFocus) {
-            _selectAdjacentHistory(context, homeModel, historyModel, 1);
+            _selectAdjacentHistory(
+              ref.read(historyModelProvider),
+              homeModel,
+              1,
+            );
           }
         },
-        const SingleActivator(LogicalKeyboardKey.arrowUp): () {
+        const SingleActivator(LogicalKeyboardKey.arrowUp, control: true): () {
           if (!homeModel.searchBarFocusNode.hasFocus) {
-            _selectAdjacentHistory(context, homeModel, historyModel, -1);
+            _selectAdjacentHistory(
+              ref.read(historyModelProvider),
+              homeModel,
+              -1,
+            );
           }
         },
         const SingleActivator(LogicalKeyboardKey.keyR, control: true): () {
