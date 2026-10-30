@@ -12,8 +12,8 @@
 /// * The zoom keys are taken over from the engine. It zooms the page on its
 ///   own for them, which leaves the entry scrolling sideways; the app's own
 ///   zoom keeps the text and the images in step instead.
-/// * `Esc` moves the focus into the search box and selects its text, the same
-///   as the app-level shortcut does when Flutter holds the focus.
+/// * `Esc` and the app's other shortcuts are forwarded as they are, so the
+///   bridge and the Flutter focus tree run the same table.
 String keyBridgeScript() {
   return """
 (function () {
@@ -22,6 +22,44 @@ String keyBridgeScript() {
       window.flutter_inappwebview.callHandler('ciyueKey', name, payload || '');
     }
   }
+  // The combinations the app binds behind the entry. Only these are taken
+  // from the WebView, so Ctrl+C and the other browser keys keep working.
+  var shortcuts = [
+    ['Escape', false, false, false],
+    ['KeyF', true, false, false],
+    ['KeyT', true, false, false],
+    ['KeyW', true, false, false],
+    ['KeyR', true, false, false],
+    ['KeyS', true, false, true],
+    ['Tab', true, false, false],
+    ['Tab', true, false, true],
+    ['PageUp', true, false, false],
+    ['PageDown', true, false, false],
+    ['ArrowUp', true, false, false],
+    ['ArrowDown', true, false, false],
+    ['Backquote', true, false, false]
+  ];
+  for (var n = 0; n <= 9; n++) {
+    shortcuts.push(['Digit' + n, true, false, false]);
+    shortcuts.push(['Digit' + n, false, true, false]);
+  }
+  function shortcutFor(e) {
+    for (var i = 0; i < shortcuts.length; i++) {
+      var s = shortcuts[i];
+      if (s[0] === e.code && s[1] === e.ctrlKey && s[2] === e.altKey && s[3] === e.shiftKey) {
+        return {
+          code: e.code,
+          key: e.key,
+          ctrl: e.ctrlKey,
+          alt: e.altKey,
+          shift: e.shiftKey,
+          meta: e.metaKey
+        };
+      }
+    }
+    return null;
+  }
+
   document.addEventListener('keydown', function (e) {
     if (e.ctrlKey && !e.altKey && !e.metaKey) {
       var key = e.key;
@@ -33,22 +71,14 @@ String keyBridgeScript() {
         return;
       }
     }
-    // The other modified combinations belong to the app's own shortcuts.
-    if (e.ctrlKey || e.altKey || e.metaKey) return;
-
-    // Esc moves the focus into the search box and selects its text.
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      post('Escape');
-      return;
-    }
 
     var target = e.target;
     var tag = target && target.tagName ? target.tagName.toLowerCase() : '';
-    // Enter belongs to the input the user is typing in.
-    if (tag === 'input' || tag === 'textarea' || (target && target.isContentEditable)) return;
+    var inInput = tag === 'input' || tag === 'textarea' || (target && target.isContentEditable);
 
+    // Enter belongs to the input the user is typing in.
     if (e.key === 'Enter') {
+      if (inInput) return;
       var selection = window.getSelection();
       var text = selection ? selection.toString().trim() : '';
       if (!text) return;
@@ -56,6 +86,12 @@ String keyBridgeScript() {
       post('Enter', text);
       return;
     }
+
+    if (inInput) return;
+    var combo = shortcutFor(e);
+    if (!combo) return;
+    e.preventDefault();
+    post('Shortcut', JSON.stringify(combo));
   }, true);
 })();
 """;

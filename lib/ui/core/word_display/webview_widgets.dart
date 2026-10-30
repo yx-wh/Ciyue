@@ -10,13 +10,13 @@ import "package:ciyue/repositories/dictionary.dart";
 import "package:ciyue/repositories/stardict.dart";
 import "package:ciyue/services/audio.dart";
 import "package:ciyue/src/generated/i18n/app_localizations.dart";
-import "package:ciyue/ui/core/search_bar.dart";
 import "package:ciyue/ui/core/word_display/content_scale_script.dart";
 import "package:ciyue/ui/core/word_display/entry_link_script.dart";
 import "package:ciyue/ui/core/word_display/key_bridge_script.dart";
 import "package:ciyue/ui/core/word_display/resource_url_script.dart";
 import "package:ciyue/ui/core/word_display/selection_style_script.dart";
 import "package:ciyue/ui/core/word_display/webview_helpers.dart";
+import "package:ciyue/ui/pages/main/home/shortcuts.dart";
 import "package:flutter/foundation.dart";
 import "package:flutter/gestures.dart";
 import "package:material_ui/material_ui.dart";
@@ -236,14 +236,14 @@ UnmodifiableListView<UserScript> dictionaryUserScripts({
 ///   dictionary it was read from.
 /// * `Zoom` is a zoom key the engine would have turned into a page zoom of
 ///   its own; the app zooms the entry instead.
-/// * `Escape` moves the focus into the search box and selects its text, which
-///   the app-level shortcut cannot do while the WebView holds the focus.
+/// * `Shortcut` is any other key the home page binds; it is replayed through
+///   the same table the Flutter focus tree uses.
 void _registerKeyBridgeHandler(
   InAppWebViewController controller, {
   required BuildContext context,
   required int? dictId,
+  required WidgetRef ref,
   required void Function(String key) onZoomKey,
-  required VoidCallback onEscapeKey,
 }) {
   controller.addJavaScriptHandler(
     handlerName: "ciyueKey",
@@ -259,29 +259,19 @@ void _registerKeyBridgeHandler(
         );
       } else if (name == "Zoom") {
         onZoomKey(payload);
-      } else if (name == "Escape") {
-        onEscapeKey();
+      } else if (name == "Shortcut") {
+        _dispatchShortcut(ref, context, payload);
       }
       return null;
     },
   );
 }
 
-/// Moves the focus into the search box and selects its text.
-///
-/// The Esc shortcut and the key bridge both reach this, so an entry behaves
-/// the same whether the WebView or a Flutter widget holds the focus.
-void _focusSearchAndSelectAll(WidgetRef ref) {
-  final homeModel = ref.read(homeModelProvider);
-  homeModel.focusSearchBar();
-  if (homeModel.searchController.isAttached) {
-    homeModel.searchController.openView();
-  }
-  // The focus node only gets a context once the field is focused, so the
-  // selection has to wait for the next frame.
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    selectAllTextInField(homeModel.searchBarFocusNode);
-  });
+/// Replays a shortcut the WebView swallowed through the home page's table.
+void _dispatchShortcut(WidgetRef ref, BuildContext context, String payload) {
+  final activator = bridgeShortcutActivator(payload);
+  if (activator == null) return;
+  shortcutActionFor(homeShortcutBindings(ref, context), activator)?.call();
 }
 
 /// Pushes the entry zoom into a page that is already open.
@@ -509,7 +499,7 @@ class _WebviewAndroidState extends ConsumerState<WebviewAndroid> {
           context: context,
           dictId: widget.dictId,
           onZoomKey: (key) => applyZoomKey(ref.read(settingsProvider), key),
-          onEscapeKey: () => _focusSearchAndSelectAll(ref),
+          ref: ref,
         );
       },
       onPageCommitVisible: (controller, url) async {
@@ -872,7 +862,7 @@ class _WebviewWindowsState extends ConsumerState<WebviewWindows> {
                 dictId: dictId,
                 onZoomKey: (key) =>
                     applyZoomKey(ref.read(settingsProvider), key),
-                onEscapeKey: () => _focusSearchAndSelectAll(ref),
+                ref: ref,
               );
               await _scheduleDesktopContentLoad(controller);
             },
@@ -1010,7 +1000,7 @@ class _WebviewWindowsState extends ConsumerState<WebviewWindows> {
                     dictId: dictId,
                     onZoomKey: (key) =>
                         applyZoomKey(ref.read(settingsProvider), key),
-                    onEscapeKey: () => _focusSearchAndSelectAll(ref),
+                    ref: ref,
                   );
                 },
                 onPageCommitVisible: (controller, url) async {

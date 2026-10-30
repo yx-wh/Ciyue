@@ -1,0 +1,317 @@
+import "dart:async";
+import "dart:convert";
+
+import "package:ciyue/core/app_globals.dart";
+import "package:ciyue/core/providers.dart";
+import "package:ciyue/repositories/settings.dart";
+import "package:ciyue/ui/core/search_bar.dart";
+import "package:ciyue/ui/core/word_display/buttons.dart";
+import "package:ciyue/ui/core/word_display/content_scale_script.dart";
+import "package:ciyue/ui/core/word_display/utils.dart";
+import "package:ciyue/viewModels/home.dart";
+import "package:flutter/services.dart";
+import "package:flutter_riverpod/flutter_riverpod.dart";
+import "package:material_ui/material_ui.dart";
+
+/// The number keys, in the order they appear on a keyboard.
+const _digitKeys = <LogicalKeyboardKey>[
+  LogicalKeyboardKey.digit0,
+  LogicalKeyboardKey.digit1,
+  LogicalKeyboardKey.digit2,
+  LogicalKeyboardKey.digit3,
+  LogicalKeyboardKey.digit4,
+  LogicalKeyboardKey.digit5,
+  LogicalKeyboardKey.digit6,
+  LogicalKeyboardKey.digit7,
+  LogicalKeyboardKey.digit8,
+  LogicalKeyboardKey.digit9,
+];
+
+/// The shortcuts the home page binds.
+///
+/// Both the Flutter focus tree and the key bridge of the entry WebView run
+/// this table. An Android WebView holds the native focus and never lets
+/// Flutter see the keys, so the bridge has to reach the same actions by
+/// itself instead of relying on [CallbackShortcuts].
+Map<SingleActivator, VoidCallback> homeShortcutBindings(
+  WidgetRef ref,
+  BuildContext context,
+) {
+  final homeModel = ref.read(homeModelProvider);
+  final history = ref.read(historyModelProvider).history;
+  final activeWord =
+      homeModel.selectedWord ?? (history.isEmpty ? null : history.first.word);
+
+  return {
+    const SingleActivator(LogicalKeyboardKey.keyF, control: true): () =>
+        _focusSearchBar(homeModel),
+    const SingleActivator(LogicalKeyboardKey.keyT, control: true):
+        homeModel.newTab,
+    const SingleActivator(LogicalKeyboardKey.keyW, control: true): () {
+      if (homeModel.tabs.isNotEmpty && homeModel.activeTabIndex >= 0) {
+        homeModel.closeTab(homeModel.activeTabIndex);
+      }
+    },
+    const SingleActivator(LogicalKeyboardKey.tab, control: true):
+        homeModel.nextTab,
+    const SingleActivator(LogicalKeyboardKey.tab, control: true, shift: true):
+        homeModel.previousTab,
+    const SingleActivator(LogicalKeyboardKey.arrowDown, control: true): () {
+      if (!homeModel.searchBarFocusNode.hasFocus) {
+        _selectAdjacentHistory(ref, homeModel, 1);
+      }
+    },
+    const SingleActivator(LogicalKeyboardKey.arrowUp, control: true): () {
+      if (!homeModel.searchBarFocusNode.hasFocus) {
+        _selectAdjacentHistory(ref, homeModel, -1);
+      }
+    },
+    const SingleActivator(LogicalKeyboardKey.keyR, control: true): () {
+      if (activeWord != null && activeWord.isNotEmpty) {
+        playWordPronunciation(context, activeWord);
+      }
+    },
+    const SingleActivator(LogicalKeyboardKey.escape): () =>
+        _focusSearchAndSelectAll(ref),
+    const SingleActivator(LogicalKeyboardKey.pageDown, control: true):
+        homeModel.nextTab,
+    const SingleActivator(LogicalKeyboardKey.pageUp, control: true):
+        homeModel.previousTab,
+    const SingleActivator(LogicalKeyboardKey.pageDown): () =>
+        _pageEntry(ref, "PageDown"),
+    const SingleActivator(LogicalKeyboardKey.pageUp): () =>
+        _pageEntry(ref, "PageUp"),
+    const SingleActivator(
+      LogicalKeyboardKey.keyS,
+      control: true,
+      shift: true,
+    ): () =>
+        unawaited(ref.read(audioModelProvider).stopAudio()),
+    const SingleActivator(LogicalKeyboardKey.equal, control: true): () =>
+        changeContentScale(ref.read(settingsProvider), 0.1),
+    const SingleActivator(
+      LogicalKeyboardKey.equal,
+      control: true,
+      shift: true,
+    ): () =>
+        changeContentScale(ref.read(settingsProvider), 0.1),
+    const SingleActivator(LogicalKeyboardKey.minus, control: true): () =>
+        changeContentScale(ref.read(settingsProvider), -0.1),
+    const SingleActivator(LogicalKeyboardKey.digit0, control: true): () =>
+        resetContentScale(ref.read(settingsProvider)),
+    ..._dictionaryTabShortcuts(ref, homeModel),
+    ..._groupShortcuts(ref),
+  };
+}
+
+void _focusSearchBar(HomeModel homeModel) {
+  homeModel.focusSearchBar();
+  if (homeModel.searchController.isAttached) {
+    homeModel.searchController.openView();
+  }
+}
+
+void _focusSearchAndSelectAll(WidgetRef ref) {
+  final homeModel = ref.read(homeModelProvider);
+  _focusSearchBar(homeModel);
+  // The focus node only gets a context once the field is focused, so the
+  // selection has to wait for the next frame.
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    selectAllTextInField(homeModel.searchBarFocusNode);
+  });
+}
+
+/// Moves the selected word through the history by [delta] entries.
+///
+/// The plain arrow keys are left to Flutter's focus traversal, so this lives
+/// on `Ctrl`+`↑`/`Ctrl`+`↓`.
+void _selectAdjacentHistory(WidgetRef ref, HomeModel homeModel, int delta) {
+  final history = ref.read(historyModelProvider).history;
+  if (history.isEmpty) return;
+
+  final currentWord = homeModel.selectedWord ?? history.first.word;
+  final currentIndex = history.indexWhere((item) => item.word == currentWord);
+
+  int newIndex;
+  if (currentIndex == -1) {
+    newIndex = delta > 0 ? 0 : history.length - 1;
+  } else {
+    newIndex = (currentIndex + delta).clamp(0, history.length - 1);
+  }
+
+  homeModel.selectedWord = history[newIndex].word;
+}
+
+/// Binds `Alt`+0..9 to the dictionary tabs of the entry.
+///
+/// The tabs live inside the entry page, but the shortcut has to sit next
+/// to the other app-level ones so that it works wherever the focus is.
+/// The entry registers its tab controller, which is where the action ends
+/// up.
+///
+/// `Alt`+0 jumps to the AI explanation, `Alt`+1..9 to the first nine
+/// dictionaries. A key that names no tab does nothing: in the expansion
+/// layout there are no tabs at all, and a number past the last dictionary
+/// has nowhere to go.
+Map<SingleActivator, VoidCallback> _dictionaryTabShortcuts(
+  WidgetRef ref,
+  HomeModel homeModel,
+) {
+  final shortcuts = <SingleActivator, VoidCallback>{};
+  for (var number = 0; number < _digitKeys.length; number++) {
+    shortcuts[SingleActivator(_digitKeys[number], alt: true)] = () {
+      // Typing in the search box must not jump to another dictionary.
+      if (homeModel.searchBarFocusNode.hasFocus) return;
+
+      final tabController = dictTabController;
+      if (tabController == null) return;
+
+      final settings = ref.read(settingsProvider);
+      final dictionaryCount =
+          tabController.length - (settings.aiExplainWord ? 1 : 0);
+      final index = dictTabIndexForNumber(
+        number: number,
+        aiExplainWord: settings.aiExplainWord,
+        dictionaryCount: dictionaryCount,
+      );
+      if (index == null) return;
+      try {
+        tabController.animateTo(index);
+      } catch (_) {
+        // The tab bar was torn down between the check and the call.
+      }
+    };
+  }
+  return shortcuts;
+}
+
+/// Binds `Ctrl`+` and `Ctrl`+1..9 to the dictionary groups.
+///
+/// The groups are numbered by the position they are listed in, so `Ctrl`+`
+/// reaches the first one -- the default group -- and `Ctrl`+1..9 the
+/// second to the tenth. A number past the last group does nothing.
+Map<SingleActivator, VoidCallback> _groupShortcuts(WidgetRef ref) {
+  final shortcuts = <SingleActivator, VoidCallback>{
+    const SingleActivator(LogicalKeyboardKey.backquote, control: true): () =>
+        _switchToGroup(ref, 1),
+  };
+  for (var number = 1; number < _digitKeys.length; number++) {
+    shortcuts[SingleActivator(_digitKeys[number], control: true)] = () =>
+        _switchToGroup(ref, number + 1);
+  }
+  return shortcuts;
+}
+
+void _switchToGroup(WidgetRef ref, int position) {
+  unawaited(ref.read(dictManagerModelProvider).switchToGroupAt(position));
+}
+
+/// Pages the entry in the expansion layout.
+///
+/// There the WebView is as tall as its content and has nothing of its own
+/// to scroll, so the outer scroll container has to do it. In the tab layout
+/// the WebView scrolls on its own and the keys are left to it.
+void _pageEntry(WidgetRef ref, String key) {
+  final settings = ref.read(settingsProvider);
+  if (settings.dictionarySwitchStyle != DictionarySwitchStyle.expansion) {
+    return;
+  }
+  expansionPageHandler?.call(key);
+}
+
+/// The activator a key bridge message names, or null when the code is not
+/// bound or the message is malformed.
+///
+/// The bridge script sends the DOM `code` plus the modifier state, so the
+/// bridge can reach the same table [homeShortcutBindings] builds.
+SingleActivator? bridgeShortcutActivator(String payload) {
+  Object? data;
+  try {
+    data = jsonDecode(payload);
+  } on FormatException {
+    return null;
+  }
+  if (data is! Map) return null;
+  final key = _logicalKeyForCode(data["code"]?.toString() ?? "");
+  if (key == null) return null;
+  return SingleActivator(
+    key,
+    control: data["ctrl"] == true,
+    alt: data["alt"] == true,
+    shift: data["shift"] == true,
+    meta: data["meta"] == true,
+  );
+}
+
+/// The action bound to [activator], matched by its keys.
+///
+/// [SingleActivator] has no value equality, so a constructed activator can
+/// never find its binding with a map lookup.
+VoidCallback? shortcutActionFor(
+  Map<SingleActivator, VoidCallback> bindings,
+  SingleActivator activator,
+) {
+  for (final entry in bindings.entries) {
+    final candidate = entry.key;
+    if (candidate.trigger == activator.trigger &&
+        candidate.control == activator.control &&
+        candidate.alt == activator.alt &&
+        candidate.shift == activator.shift &&
+        candidate.meta == activator.meta) {
+      return entry.value;
+    }
+  }
+  return null;
+}
+
+/// The key a DOM `KeyboardEvent.code` names, or null for a code the home page
+/// does not bind.
+LogicalKeyboardKey? _logicalKeyForCode(String code) {
+  switch (code) {
+    case "KeyF":
+      return LogicalKeyboardKey.keyF;
+    case "KeyT":
+      return LogicalKeyboardKey.keyT;
+    case "KeyW":
+      return LogicalKeyboardKey.keyW;
+    case "KeyR":
+      return LogicalKeyboardKey.keyR;
+    case "KeyS":
+      return LogicalKeyboardKey.keyS;
+    case "Tab":
+      return LogicalKeyboardKey.tab;
+    case "PageUp":
+      return LogicalKeyboardKey.pageUp;
+    case "PageDown":
+      return LogicalKeyboardKey.pageDown;
+    case "ArrowUp":
+      return LogicalKeyboardKey.arrowUp;
+    case "ArrowDown":
+      return LogicalKeyboardKey.arrowDown;
+    case "Escape":
+      return LogicalKeyboardKey.escape;
+    case "Backquote":
+      return LogicalKeyboardKey.backquote;
+    case "Digit0":
+      return LogicalKeyboardKey.digit0;
+    case "Digit1":
+      return LogicalKeyboardKey.digit1;
+    case "Digit2":
+      return LogicalKeyboardKey.digit2;
+    case "Digit3":
+      return LogicalKeyboardKey.digit3;
+    case "Digit4":
+      return LogicalKeyboardKey.digit4;
+    case "Digit5":
+      return LogicalKeyboardKey.digit5;
+    case "Digit6":
+      return LogicalKeyboardKey.digit6;
+    case "Digit7":
+      return LogicalKeyboardKey.digit7;
+    case "Digit8":
+      return LogicalKeyboardKey.digit8;
+    case "Digit9":
+      return LogicalKeyboardKey.digit9;
+  }
+  return null;
+}
