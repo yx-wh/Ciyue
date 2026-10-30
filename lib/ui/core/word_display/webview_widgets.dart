@@ -238,12 +238,15 @@ UnmodifiableListView<UserScript> dictionaryUserScripts({
 ///   its own; the app zooms the entry instead.
 /// * `Shortcut` is any other key the home page binds; it is replayed through
 ///   the same table the Flutter focus tree uses.
+/// * `ContextWord` is the word a right click selected, so the menu can use it
+///   even when the native menu has already cleared the selection.
 void _registerKeyBridgeHandler(
   InAppWebViewController controller, {
   required BuildContext context,
   required int? dictId,
   required WidgetRef ref,
   required void Function(String key) onZoomKey,
+  void Function(String word)? onContextWord,
 }) {
   controller.addJavaScriptHandler(
     handlerName: "ciyueKey",
@@ -261,6 +264,8 @@ void _registerKeyBridgeHandler(
         onZoomKey(payload);
       } else if (name == "Shortcut") {
         _dispatchShortcut(ref, context, payload);
+      } else if (name == "ContextWord") {
+        onContextWord?.call(payload);
       }
       return null;
     },
@@ -307,6 +312,7 @@ class WebviewAndroid extends ConsumerStatefulWidget {
 class _WebviewAndroidState extends ConsumerState<WebviewAndroid> {
   InAppWebViewController? _webViewController;
   String _selectedText = "";
+  String _contextWord = "";
 
   @override
   void didUpdateWidget(WebviewAndroid oldWidget) {
@@ -402,11 +408,10 @@ class _WebviewAndroidState extends ConsumerState<WebviewAndroid> {
             id: 2,
             title: locale.lookup,
             action: () async {
-              // A right click does not raise the long-press callback that
-              // fills in the selection, so it is read from the WebView
-              // here. With nothing selected there is nothing to look up.
-              final text = await _webViewController?.getSelectedText() ?? "";
-              final word = text.trim();
+              // The word comes from onCreateContextMenu: a right click does
+              // not raise the long-press selection, so the live one can be
+              // empty by now.
+              final word = _selectedText.trim();
               if (word.isEmpty || !context.mounted) return;
               context.push(
                 "/word/${Uri.encodeComponent(word)}?dictId=${widget.dictId}",
@@ -428,7 +433,11 @@ class _WebviewAndroidState extends ConsumerState<WebviewAndroid> {
           ),
         ],
         onCreateContextMenu: (hitTestResult) async {
-          _selectedText = await _webViewController?.getSelectedText() ?? "";
+          final selected = await _webViewController?.getSelectedText() ?? "";
+          // The right click word is captured in JS as well, because the native
+          // menu can clear the selection before this runs.
+          _selectedText = selected.trim().isNotEmpty ? selected : _contextWord;
+          _contextWord = "";
         },
       );
       _cachedContextMenu = contextMenu;
@@ -499,6 +508,7 @@ class _WebviewAndroidState extends ConsumerState<WebviewAndroid> {
           context: context,
           dictId: widget.dictId,
           onZoomKey: (key) => applyZoomKey(ref.read(settingsProvider), key),
+          onContextWord: (word) => _contextWord = word,
           ref: ref,
         );
       },

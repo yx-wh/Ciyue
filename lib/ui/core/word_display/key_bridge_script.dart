@@ -97,39 +97,54 @@ String keyBridgeScript() {
 """;
 }
 
-/// Selects the word under the pointer on a right click.
+/// Selects the word under the pointer on a right click and tells Dart which
+/// word it was.
 ///
 /// A right click does not raise the long press selection, so the context menu
-/// had nothing to look up: this selects the word the menu then reads back. The
-/// word granularity is the browser's own, which also copes with the languages
-/// that do not separate words with spaces.
+/// had nothing to look up. The word is both selected (the menu's Copy and Read
+/// aloud use it) and handed over as `ContextWord`, so the lookup still works
+/// when the native menu clears the selection. The word granularity is the
+/// browser's own, which also copes with the languages that do not separate
+/// words with spaces.
 String contextWordScript() {
   return """
 (function () {
+  function postWord(word) {
+    if (!word) return;
+    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+      window.flutter_inappwebview.callHandler('ciyueKey', 'ContextWord', word);
+    }
+  }
   function selectWordAt(x, y) {
-    if (!document.caretRangeFromPoint) return false;
+    if (!document.caretRangeFromPoint) return '';
     var range = document.caretRangeFromPoint(x, y);
-    if (!range) return false;
+    if (!range) return '';
     var selection = window.getSelection();
-    if (!selection) return false;
+    if (!selection) return '';
     selection.removeAllRanges();
     selection.addRange(range);
     if (selection.modify) {
       selection.modify('move', 'backward', 'word');
       selection.modify('extend', 'forward', 'word');
     }
-    return true;
+    return selection.toString().trim();
   }
-  // pointerdown fires before the native menu and carries the button, so the
-  // selection is ready by the time the menu asks for it.
+  function takeWord(x, y) {
+    postWord(selectWordAt(x, y));
+  }
+  // pointerdown and mousedown fire before the native menu and carry the
+  // button, so the word is known by the time the menu asks for it.
   document.addEventListener('pointerdown', function (e) {
-    if (e.button === 2) selectWordAt(e.clientX, e.clientY);
+    if (e.button === 2) takeWord(e.clientX, e.clientY);
+  }, true);
+  document.addEventListener('mousedown', function (e) {
+    if (e.button === 2) takeWord(e.clientX, e.clientY);
   }, true);
   // Fallback for a WebView that only dispatches contextmenu.
   document.addEventListener('contextmenu', function (e) {
     var selection = window.getSelection();
     if (!selection || selection.toString().trim() === '') {
-      selectWordAt(e.clientX, e.clientY);
+      takeWord(e.clientX, e.clientY);
     }
   }, true);
 })();
