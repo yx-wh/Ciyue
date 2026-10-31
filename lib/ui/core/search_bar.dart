@@ -1,3 +1,4 @@
+import "package:ciyue/core/app_globals.dart";
 import "package:ciyue/core/providers.dart";
 import "package:ciyue/repositories/settings.dart";
 import "package:ciyue/services/dictionary_lookup_instance.dart";
@@ -76,6 +77,7 @@ class _WordSearchBarWithSuggestionsState
   @override
   void initState() {
     super.initState();
+    widget.focusNode?.addListener(_onFocusChanged);
     if (widget.controller != null && !_isViewOpen) {
       widget.controller!.text = widget.word;
     }
@@ -84,11 +86,37 @@ class _WordSearchBarWithSuggestionsState
   @override
   void didUpdateWidget(covariant WordSearchBarWithSuggestions oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.focusNode != widget.focusNode) {
+      oldWidget.focusNode?.removeListener(_onFocusChanged);
+      widget.focusNode?.addListener(_onFocusChanged);
+    }
     if (widget.controller != null &&
         widget.word != oldWidget.word &&
         !_isViewOpen) {
       widget.controller!.text = widget.word;
     }
+  }
+
+  @override
+  void dispose() {
+    widget.focusNode?.removeListener(_onFocusChanged);
+    super.dispose();
+  }
+
+  /// Remembers this box as the one Esc hands the focus to and from.
+  void _markActive() {
+    final node = widget.focusNode;
+    if (node != null) activeSearchFocusNode = node;
+    final controller = _effectiveController;
+    if (controller != null) activeSearchController = controller;
+  }
+
+  void _onFocusChanged() {
+    final node = widget.focusNode;
+    if (node == null || !node.hasFocus) return;
+    activeSearchFocusNode = node;
+    final controller = _effectiveController;
+    if (controller != null) activeSearchController = controller;
   }
 
   void _selectAllText(SearchController controller) {
@@ -139,6 +167,7 @@ class _WordSearchBarWithSuggestionsState
         child: SearchAnchor(
           viewHintText: AppLocalizations.of(context)!.search,
           viewOnOpen: () {
+            _markActive();
             final ctrl = _effectiveController;
             if (ctrl == null) return;
             if (widget.word.isNotEmpty && !widget.isHome) {
@@ -161,6 +190,14 @@ class _WordSearchBarWithSuggestionsState
             if (ctrl != null && widget.word.isNotEmpty && !widget.isHome) {
               ctrl.text = widget.word;
             }
+            // Return the focus to the box the view was opened from, so the
+            // next Esc can hand it back to the entry.
+            final node = widget.focusNode;
+            if (node != null) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (node.context != null && !node.hasFocus) node.requestFocus();
+              });
+            }
           },
           builder: (context, controller) {
             _anchorController = controller;
@@ -181,12 +218,14 @@ class _WordSearchBarWithSuggestionsState
                 maxWidth: 500,
               ),
               onTap: () {
+                _markActive();
                 if (controller.text.isNotEmpty && !widget.isHome) {
                   _selectAllText(controller);
                 }
                 controller.openView();
               },
               onChanged: (_) {
+                _markActive();
                 if (!_isViewOpen) {
                   controller.openView();
                 }
