@@ -72,7 +72,7 @@ Map<SingleActivator, VoidCallback> homeShortcutBindings(
       }
     },
     const SingleActivator(LogicalKeyboardKey.escape): () =>
-        _focusSearchAndSelectAll(ref),
+        _toggleSearchFocus(ref),
     const SingleActivator(LogicalKeyboardKey.pageDown, control: true):
         homeModel.nextTab,
     const SingleActivator(LogicalKeyboardKey.pageUp, control: true):
@@ -133,6 +133,25 @@ void _focusSearchAndSelectAll(WidgetRef ref) {
       selectAllTextInField(node);
     });
   });
+}
+
+/// Moves the focus between the search box and the entry.
+///
+/// The first Esc focuses the box and selects its text; the next one hands the
+/// focus back to the entry, so the same key walks between the two places a
+/// reader moves in.
+void _toggleSearchFocus(WidgetRef ref) {
+  final homeModel = ref.read(homeModelProvider);
+  if (homeModel.searchController.isOpen) {
+    homeModel.searchController.closeView(null);
+    return;
+  }
+  if (homeModel.searchBarFocusNode.hasFocus) {
+    homeModel.searchBarFocusNode.unfocus();
+    entryFocusHandler?.call();
+    return;
+  }
+  _focusSearchAndSelectAll(ref);
 }
 
 /// Moves the selected word through the history by [delta] entries.
@@ -375,7 +394,7 @@ class _SearchEscapeCloserState extends ConsumerState<SearchEscapeCloser> {
     // focus may also have moved to the app bar, so do not require it on the
     // search box.
     if (ModalRoute.of(context)?.isCurrent ?? false) {
-      _focusSearchAndSelectAll(ref);
+      _toggleSearchFocus(ref);
       return true;
     }
     return false;

@@ -20,7 +20,7 @@ Ctrl+`  /  Ctrl+1…9      Groups: which dictionaries a lookup uses
 | Shortcut | Action |
 |---|---|
 | `Ctrl`+`F` | Move the focus into the search box |
-| `Esc` | Move the focus into the search box **and select the text in it**, so typing replaces the word |
+| `Esc` | Move the focus into the search box **and select the text in it**, so typing replaces the word; press it again to return to the entry |
 | `Enter` on a selection | Look up the selected text (see below) |
 
 ### Looking up a selection

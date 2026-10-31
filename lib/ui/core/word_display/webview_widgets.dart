@@ -613,6 +613,7 @@ class _WebviewAndroidState extends ConsumerState<WebviewAndroid> {
           onContextWord: (word) => _contextWord = word,
           ref: ref,
         );
+        entryFocusHandler = () => unawaited(controller.requestFocus());
       },
       onPageCommitVisible: (controller, url) async {
         // Only the expansion panels need live height reports, and only they
@@ -1009,6 +1010,7 @@ class _WebviewWindowsState extends ConsumerState<WebviewWindows> {
                     applyZoomKey(ref.read(settingsProvider), key),
                 ref: ref,
               );
+              entryFocusHandler = () => unawaited(controller.requestFocus());
               await _scheduleDesktopContentLoad(controller);
             },
             onPageCommitVisible: (controller, url) async {
@@ -1156,6 +1158,8 @@ class _WebviewWindowsState extends ConsumerState<WebviewWindows> {
                         applyZoomKey(ref.read(settingsProvider), key),
                     ref: ref,
                   );
+                  entryFocusHandler = () =>
+                      unawaited(controller.requestFocus());
                 },
                 onPageCommitVisible: (controller, url) async {
                   // A reload starts a fresh document, which drops the inline
