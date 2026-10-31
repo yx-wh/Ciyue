@@ -36,6 +36,10 @@ void Function(String key)? expansionPageHandler;
 FocusNode? activeSearchFocusNode;
 SearchController? activeSearchController;
 
+// The search box the page on screen owns. The key bridge has no page context
+// of its own, so Esc from an entry has to reach the right box through this.
+FocusNode? pageSearchFocusNode;
+
 // The entry WebViews that can take the focus back, keyed by the state object
 // that owns them: two entries showing the same dictionary must not collide.
 final Map<
@@ -55,18 +59,40 @@ int? activeEntryDictId;
 // WebView.
 void focusActiveEntry() {
   final dictId = activeEntryDictId;
+  talker.info(
+    "focusActiveEntry: dict=$dictId targets=${entryFocusTargets.length}",
+  );
   if (dictId == null) return;
   final current = entryFocusTargets.values.where(
     (target) => target.dictId() == dictId && target.isCurrent(),
   );
   if (current.isNotEmpty) {
+    talker.info("focusActiveEntry: current=${current.length}");
     current.last.focus();
     return;
   }
   final matches = entryFocusTargets.values.where(
     (target) => target.dictId() == dictId,
   );
-  if (matches.isNotEmpty) matches.last.focus();
+  if (matches.isNotEmpty) {
+    talker.info("focusActiveEntry: off-route=${matches.length}");
+    matches.last.focus();
+  }
+}
+
+/// Gives the focus back to the entry, then again over the next two frames.
+///
+/// Android hides the IME asynchronously, and a focus request made before that
+/// lands can be dropped again. Frames are used rather than a timer so widget
+/// tests do not leave a pending timer behind.
+void focusActiveEntrySoon() {
+  focusActiveEntry();
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    focusActiveEntry();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      focusActiveEntry();
+    });
+  });
 }
 
 List<dynamic> ttsEngines = [];

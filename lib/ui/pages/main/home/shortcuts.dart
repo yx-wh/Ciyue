@@ -118,6 +118,7 @@ void _focusSearchBar(HomeModel homeModel) {
 }
 
 void _focusNodeAndSelectAll(FocusNode node) {
+  talker.info("focusNodeAndSelectAll: attached=${node.context != null}");
   // Run after the current key event has been dispatched: the text field's
   // dismiss intent can otherwise unfocus the box right after this returns.
   WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -131,10 +132,6 @@ void _focusNodeAndSelectAll(FocusNode node) {
       selectAllTextInField(node);
     });
   });
-}
-
-void _focusSearchAndSelectAll(WidgetRef ref) {
-  _focusNodeAndSelectAll(ref.read(homeModelProvider).searchBarFocusNode);
 }
 
 /// Moves the focus between the search box and the entry.
@@ -159,12 +156,17 @@ void _toggleSearchFocus(WidgetRef ref) {
   // The box the reader last used may be the home page's or the entry page's;
   // both register themselves here when they take the focus.
   final focused = activeSearchFocusNode;
+  talker.info(
+    "esc toggle: focused=${focused?.hasFocus} dict=$activeEntryDictId",
+  );
   if (focused != null && focused.hasFocus) {
     focused.unfocus();
-    focusActiveEntry();
+    focusActiveEntrySoon();
     return;
   }
-  _focusSearchAndSelectAll(ref);
+  final target =
+      pageSearchFocusNode ?? ref.read(homeModelProvider).searchBarFocusNode;
+  _focusNodeAndSelectAll(target);
 }
 
 /// Moves the selected word through the history by [delta] entries.
@@ -429,9 +431,12 @@ class _SearchEscapeCloserState extends ConsumerState<SearchEscapeCloser> {
     // search box.
     if (!(ModalRoute.of(context)?.isCurrent ?? false)) return false;
     final focused = activeSearchFocusNode;
+    talker.info(
+      "esc handler: focused=${focused?.hasFocus} dict=$activeEntryDictId",
+    );
     if (focused != null && focused.hasFocus) {
       focused.unfocus();
-      focusActiveEntry();
+      focusActiveEntrySoon();
     } else {
       _focusNodeAndSelectAll(node);
     }

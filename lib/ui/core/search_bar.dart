@@ -166,7 +166,7 @@ class _WordSearchBarWithSuggestionsState
     // The lookup is done: hand the focus to the entry, so the next Esc reaches
     // the app through the WebView instead of dying in the IME.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      focusActiveEntry();
+      focusActiveEntrySoon();
     });
   }
 
