@@ -136,6 +136,10 @@ class _WordSearchBarWithSuggestionsState
     if (controller.isAttached && controller.isOpen) {
       controller.closeView(normalizedWord);
     }
+    // Drop the field focus as well: on Android the IME turns a physical Esc
+    // into BACK while it is up, so the key would never reach the app, and
+    // leaving the field focused keeps the keyboard on screen after a lookup.
+    FocusManager.instance.primaryFocus?.unfocus();
     if (widget.isHome && settings.autoRemoveSearchWord) {
       controller.text = "";
     }
@@ -158,6 +162,12 @@ class _WordSearchBarWithSuggestionsState
         context.push(target);
       }
     }
+
+    // The lookup is done: hand the focus to the entry, so the next Esc reaches
+    // the app through the WebView instead of dying in the IME.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      focusActiveEntry();
+    });
   }
 
   @override
@@ -189,14 +199,6 @@ class _WordSearchBarWithSuggestionsState
             final ctrl = _effectiveController;
             if (ctrl != null && widget.word.isNotEmpty && !widget.isHome) {
               ctrl.text = widget.word;
-            }
-            // Return the focus to the box the view was opened from, so the
-            // next Esc can hand it back to the entry.
-            final node = widget.focusNode;
-            if (node != null) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (node.context != null && !node.hasFocus) node.requestFocus();
-              });
             }
           },
           builder: (context, controller) {
