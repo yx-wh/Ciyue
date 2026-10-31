@@ -9,6 +9,7 @@ import "package:ciyue/database/app/app.dart";
 import "package:ciyue/models/dictionary_lookup.dart";
 import "package:ciyue/repositories/dictionary_import_failure.dart";
 import "package:ciyue/repositories/stardict.dart";
+import "package:ciyue/repositories/zim.dart";
 import "package:ciyue/src/generated/i18n/app_localizations.dart";
 import "package:ciyue/services/lookup_keys.dart";
 import "package:ciyue/services/media_tags.dart";
@@ -44,6 +45,16 @@ class MddResourceData {
   int get compressedSize => offsetInfo.compressedSize;
 }
 
+/// Instantiates the appropriate [LoadedDictionary] for [path] and [type].
+LoadedDictionary createLoadedDictionary({
+  required String path,
+  required int type,
+}) {
+  if (DictionaryType.isZim(type)) return Zim(path: path);
+  if (DictionaryType.isStardict(type)) return Stardict(path: path);
+  return Mdict(path: path);
+}
+
 class DictManager {
   final Map<int, LoadedDictionary> dicts = {};
   List<DictGroupData> groups = [];
@@ -62,9 +73,7 @@ class DictManager {
   /// [LoadedDictionary.waitForLoading] call instead.
   Future<void> add(int id, String path) async {
     final type = await dictionaryListDao.getType(id);
-    final LoadedDictionary dict = DictionaryType.isStardict(type)
-        ? Stardict(path: path)
-        : Mdict(path: path);
+    final dict = createLoadedDictionary(path: path, type: type);
     try {
       await dict.initMetadata();
     } catch (e, stackTrace) {
@@ -746,6 +755,13 @@ class Mdict implements LoadedDictionary {
     }
   }
 
+  @override
+  Future<Uint8List?> readResourceFile(String filename) async {
+    final data = await _readResourceDesktop(filename);
+    if (data == null) return null;
+    return data is Uint8List ? data : Uint8List.fromList(data);
+  }
+
   /// A companion file kept loose next to the dictionary, or packed in a
   /// zip audio pack. Returns null when it exists in neither place.
   Future<Uint8List?> _readLooseResourceFile(String filename) async {
@@ -1247,6 +1263,70 @@ Future<void> selectStardict(
   }
 }
 
+/// Counterpart of [selectMdx] and [selectStardict] for ZIM archives (.zim).
+Future<void> selectZim(
+  BuildContext context,
+  List<String> paths, {
+  bool closeLoadingWhenEmpty = false,
+}) async {
+  final failures = _ImportFailures();
+  if (paths.isEmpty) {
+    if (closeLoadingWhenEmpty && context.mounted) {
+      context.pop();
+    }
+    if (context.mounted) {
+      ToastService.show(
+        AppLocalizations.of(context)!.noDictionariesFound,
+        context,
+        type: ToastType.info,
+      );
+    }
+    return;
+  }
+
+  for (final path in paths) {
+    final pathNoExtension = setExtension(path, "");
+
+    if (await dictionaryListDao.dictionaryExist(pathNoExtension)) {
+      talker.warning(
+        "Skipping $path: $pathNoExtension is already registered by "
+        "another dictionary",
+      );
+      continue;
+    }
+
+    final dict = Zim(path: pathNoExtension);
+    try {
+      await dict.add();
+      talker.info("Added ZIM dictionary: $pathNoExtension");
+    } catch (e) {
+      talker.error(
+        "Failed to add ZIM dictionary: $pathNoExtension, error: $e",
+        e,
+        StackTrace.current,
+      );
+      failures.add(
+        classifyDictionaryImportFailure(e),
+        name: basename(pathNoExtension),
+      );
+    } finally {
+      await dict.close();
+    }
+  }
+
+  if (context.mounted) {
+    ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(manageDictionariesModelProvider).update();
+    context.pop();
+  }
+
+  if (context.mounted) {
+    await failures.report(context);
+  }
+}
+
 /// Counts a batch's import failures so the user gets one toast per category
 /// instead of one per file.
 class _ImportFailures {
@@ -1426,13 +1506,13 @@ Future<void> selectAudioMdd(BuildContext context, List<String> paths) async {
   }
 }
 
-/// Desktop file import for dictionaries: one picker accepting both MDict
-/// (.mdx) and StarDict (.ifo) files, each routed to its format's add
+/// Desktop file import for dictionaries: one picker accepting MDict
+/// (.mdx), StarDict (.ifo), and ZIM (.zim) files, each routed to its format's add
 /// pipeline.
 Future<void> importDictionaryFilesOnDesktop(BuildContext context) async {
   final XTypeGroup typeGroup = XTypeGroup(
     label: "Dictionary File",
-    extensions: <String>["mdx", "ifo"],
+    extensions: <String>["mdx", "ifo", "zim"],
   );
 
   final files = await openFiles(acceptedTypeGroups: [typeGroup]);
@@ -1446,6 +1526,9 @@ Future<void> importDictionaryFilesOnDesktop(BuildContext context) async {
       .toList();
   final ifoPaths = paths
       .where((path) => path.toLowerCase().endsWith(".ifo"))
+      .toList();
+  final zimPaths = paths
+      .where((path) => path.toLowerCase().endsWith(".zim"))
       .toList();
 
   if (mdxPaths.isNotEmpty) {
@@ -1461,6 +1544,13 @@ Future<void> importDictionaryFilesOnDesktop(BuildContext context) async {
     showLoadingDialog(context, text: AppLocalizations.of(context)!.loading);
     if (context.mounted) {
       await selectStardict(context, ifoPaths);
+    }
+  }
+
+  if (zimPaths.isNotEmpty && context.mounted) {
+    showLoadingDialog(context, text: AppLocalizations.of(context)!.loading);
+    if (context.mounted) {
+      await selectZim(context, zimPaths);
     }
   }
 }
@@ -1585,8 +1675,41 @@ Future<List<String>> findStardictFilesOnAndroid(String? directory) async {
   return findStardictFilesInDirectories([documentsDir.path]);
 }
 
-/// Desktop folder import: scans the picked directories for both MDict
-/// (.mdx) and StarDict (.ifo) dictionaries and registers what it finds,
+Future<List<String>> findZimFilesInDirectories(
+  Iterable<String> directories,
+) async {
+  final zimFiles = <String>[];
+  final seen = <String>{};
+
+  for (final directoryPath in directories) {
+    final filesInDirectory = <String>[];
+    await findAllFileByExtension(
+      Directory(directoryPath),
+      filesInDirectory,
+      "zim",
+    );
+
+    for (final filePath in filesInDirectory) {
+      if (seen.add(_normalizeScannedPath(filePath))) {
+        zimFiles.add(filePath);
+      }
+    }
+  }
+
+  zimFiles.sort();
+  return zimFiles;
+}
+
+Future<List<String>> findZimFilesOnAndroid(String? directory) async {
+  final documentsDir = Directory(
+    directory ??
+        join((await getApplicationSupportDirectory()).path, "dictionaries"),
+  );
+  return findZimFilesInDirectories([documentsDir.path]);
+}
+
+/// Desktop folder import: scans the picked directories for MDict (.mdx),
+/// StarDict (.ifo), and ZIM (.zim) dictionaries and registers what it finds,
 /// through each format's own add pipeline.
 Future<void> importDictionariesFromDirectoriesOnDesktop(
   BuildContext context,
@@ -1604,10 +1727,10 @@ Future<void> importDictionariesFromDirectoriesOnDesktop(
   showLoadingDialog(context, text: AppLocalizations.of(context)!.loading);
   final mdxFiles = await findMdxFilesInDirectories(directories);
   final ifoFiles = await findStardictFilesInDirectories(directories);
+  final zimFiles = await findZimFilesInDirectories(directories);
 
-  // The dialog above is closed by whichever add pipeline runs; when both
-  // formats were found, it is shown again for the second one.
-  final mdxHandled = mdxFiles.isNotEmpty || ifoFiles.isEmpty;
+  final mdxHandled =
+      mdxFiles.isNotEmpty || (ifoFiles.isEmpty && zimFiles.isEmpty);
   if (mdxHandled && context.mounted) {
     await selectMdx(context, mdxFiles, closeLoadingWhenEmpty: true);
   }
@@ -1617,5 +1740,12 @@ Future<void> importDictionariesFromDirectoriesOnDesktop(
       showLoadingDialog(context, text: AppLocalizations.of(context)!.loading);
     }
     await selectStardict(context, ifoFiles, closeLoadingWhenEmpty: true);
+  }
+
+  if (zimFiles.isNotEmpty && context.mounted) {
+    if (mdxHandled || ifoFiles.isNotEmpty) {
+      showLoadingDialog(context, text: AppLocalizations.of(context)!.loading);
+    }
+    await selectZim(context, zimFiles, closeLoadingWhenEmpty: true);
   }
 }

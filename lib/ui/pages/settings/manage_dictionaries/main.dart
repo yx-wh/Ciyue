@@ -4,11 +4,9 @@ import "dart:io";
 import "package:ciyue/core/app_globals.dart";
 import "package:ciyue/core/providers.dart";
 import "package:ciyue/database/app/app.dart";
-import "package:ciyue/models/dictionary_lookup.dart";
 import "package:ciyue/repositories/dictionary.dart";
 import "package:ciyue/repositories/dictionary_files.dart";
 import "package:ciyue/repositories/hunspell.dart";
-import "package:ciyue/repositories/stardict.dart";
 import "package:ciyue/services/platform.dart";
 import "package:ciyue/services/toast.dart";
 import "package:ciyue/src/generated/i18n/app_localizations.dart";
@@ -96,10 +94,12 @@ Future<void> importDictionariesFromFiles(BuildContext context) async {
 
       final paths = await findMdxFilesOnAndroid(path);
       final ifoPaths = await findStardictFilesOnAndroid(path);
+      final zimPaths = await findZimFilesOnAndroid(path);
       // The loading dialog above is closed by whichever add pipeline
-      // runs; when both formats were found, the dialog is shown again
-      // for the second one.
-      final mdxHandled = paths.isNotEmpty || ifoPaths.isEmpty;
+      // runs; when multiple formats were found, the dialog is shown again
+      // for the subsequent ones.
+      final mdxHandled =
+          paths.isNotEmpty || (ifoPaths.isEmpty && zimPaths.isEmpty);
       if (mdxHandled && context.mounted) {
         await selectMdx(context, paths, closeLoadingWhenEmpty: true);
       }
@@ -111,6 +111,15 @@ Future<void> importDictionariesFromFiles(BuildContext context) async {
           );
         }
         await selectStardict(context, ifoPaths, closeLoadingWhenEmpty: true);
+      }
+      if (zimPaths.isNotEmpty && context.mounted) {
+        if (mdxHandled || ifoPaths.isNotEmpty) {
+          showLoadingDialog(
+            context,
+            text: AppLocalizations.of(context)!.loading,
+          );
+        }
+        await selectZim(context, zimPaths, closeLoadingWhenEmpty: true);
       }
       await addHunspellPairs(await findHunspellPairsOnAndroid(path));
       return;
@@ -436,12 +445,10 @@ class _DictionaryCardState extends ConsumerState<DictionaryCard> {
                                           .dicts[dictionary.id]!
                                           .title;
                                     } else {
-                                      final LoadedDictionary dict =
-                                          DictionaryType.isStardict(
-                                            dictionary.type,
-                                          )
-                                          ? Stardict(path: dictionary.path)
-                                          : Mdict(path: dictionary.path);
+                                      final dict = createLoadedDictionary(
+                                        path: dictionary.path,
+                                        type: dictionary.type,
+                                      );
                                       try {
                                         await dict.initOnlyMetadata(
                                           dictionary.id,
@@ -569,13 +576,26 @@ class _DictionaryCardState extends ConsumerState<DictionaryCard> {
                         dictionary.id,
                       );
 
-                      final LoadedDictionary tmpDict =
-                          DictionaryType.isStardict(dictionary.type)
-                          ? Stardict(path: dictionary.path)
-                          : Mdict(path: dictionary.path);
+                      final tmpDict = createLoadedDictionary(
+                        path: dictionary.path,
+                        type: dictionary.type,
+                      );
                       await tmpDict.removeDictionary(
                         dictionaryId: dictionary.id,
                       );
+
+                      try {
+                        await ref
+                            .read(fullTextSearchServiceProvider)
+                            .dropDictionary(dictionary.id);
+                      } catch (e, stackTrace) {
+                        talker.error(
+                          "Failed to drop full-text index for dictionary "
+                          "${dictionary.id}: $e",
+                          e,
+                          stackTrace,
+                        );
+                      }
 
                       if (sheetContext.mounted) {
                         ref.read(manageDictionariesModelProvider).update();
