@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.WindowManager
 import androidx.core.net.toUri
 import androidx.core.view.WindowCompat
@@ -27,6 +28,11 @@ class MainActivity : FlutterActivity() {
     }
 
     private lateinit var configurator: EngineConfigurator
+
+    /// The channel the Dart side uses to tell us when a search box has the
+    /// focus, and that we use to hand an intercepted Esc back to Flutter.
+    private var keyChannel: MethodChannel? = null
+    private var interceptEscape = false
 
     private fun enableEdgeToEdge() {
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -146,6 +152,34 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         ensureConfigurator()
         configurator.configure(flutterEngine)
+
+        keyChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "ciyue/keys"
+        ).also { channel ->
+            channel.setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "setInterceptEscape" -> {
+                        // Only take the key over while an editable field is
+                        // focused; elsewhere the WebView's key bridge or the
+                        // Flutter shortcut table still owns Esc.
+                        interceptEscape = call.arguments as? Boolean ?: false
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        }
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (interceptEscape && event.keyCode == KeyEvent.KEYCODE_ESCAPE) {
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                keyChannel?.invokeMethod("escape", null)
+            }
+            return true
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
