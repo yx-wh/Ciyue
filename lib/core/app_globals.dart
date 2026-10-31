@@ -32,6 +32,12 @@ TabController? dictTabController;
 // action over.
 void Function(String key)? expansionPageHandler;
 
+// Gives the focus back to the entry WebView.
+//
+// The Esc shortcut toggles between the search box and the entry. The entry
+// holds the native focus, so its controller has to be asked directly.
+void Function()? entryFocusHandler;
+
 List<dynamic> ttsEngines = [];
 final List<dynamic> ttsLanguages = [];
 String? windowsWebview2Directory;
