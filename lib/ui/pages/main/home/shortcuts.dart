@@ -169,30 +169,6 @@ void _toggleSearchFocus(WidgetRef ref) {
   _focusNodeAndSelectAll(target);
 }
 
-/// Handles Esc that the Android activity intercepted before the IME.
-///
-/// The activity only takes the key over while a search field has the focus;
-/// the rest of the time the WebView key bridge or the Flutter table handles
-/// it. This is the same walk as [_toggleSearchFocus], without a [WidgetRef].
-void handleEscapeShortcut() {
-  talker.info("native esc: dict=$activeEntryDictId");
-  final activeController = activeSearchController;
-  if (activeController != null &&
-      activeController.isAttached &&
-      activeController.isOpen) {
-    activeController.closeView(null);
-    return;
-  }
-  final focused = activeSearchFocusNode;
-  if (focused != null && focused.hasFocus) {
-    focused.unfocus();
-    focusActiveEntrySoon();
-    return;
-  }
-  final target = pageSearchFocusNode;
-  if (target != null) _focusNodeAndSelectAll(target);
-}
-
 /// Moves the selected word through the history by [delta] entries.
 ///
 /// The plain arrow keys are left to Flutter's focus traversal, so this lives

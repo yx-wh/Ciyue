@@ -10,9 +10,7 @@ import "package:ciyue/repositories/settings.dart";
 import "package:ciyue/services/floating_window.dart";
 import "package:ciyue/services/platform.dart";
 import "package:ciyue/src/generated/i18n/app_localizations.dart";
-import "package:ciyue/ui/pages/main/home/shortcuts.dart";
 import "package:ciyue/utils.dart";
-import "package:flutter/services.dart";
 import "package:drift/drift.dart" as drift;
 import "package:dynamic_color/dynamic_color.dart";
 import "package:material_ui/material_ui.dart";
@@ -370,13 +368,6 @@ class _CiyueState extends State<Ciyue> with WidgetsBindingObserver {
 
     WidgetsBinding.instance.addObserver(this);
     refreshAll = refresh;
-
-    // The activity takes Esc over before the IME while a search field has the
-    // focus; the key comes back here instead of reaching the Flutter table.
-    const MethodChannel("ciyue/keys").setMethodCallHandler((call) async {
-      if (call.method == "escape") handleEscapeShortcut();
-      return null;
-    });
   }
 
   @override
@@ -386,7 +377,6 @@ class _CiyueState extends State<Ciyue> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    const MethodChannel("ciyue/keys").setMethodCallHandler(null);
     WidgetsBinding.instance.removeObserver(this);
     disposeTrayMenu();
     super.dispose();
