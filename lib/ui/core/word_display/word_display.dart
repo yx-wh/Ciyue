@@ -142,6 +142,11 @@ class _WordDisplayState extends ConsumerState<WordDisplay> {
 
   @override
   Widget build(BuildContext context) {
+    // A pushed entry page owns its title search box. The pane inside the home
+    // split view does not, so the home page's box stays the default there.
+    if (widget.showBackButton) {
+      pageSearchFocusNode = _searchFocusNode;
+    }
     final settings = ref.watch(settingsProvider);
     final validDictIdsAsync = ref.watch(validDictIdsProvider(widget.word));
     if (validDictIdsAsync.hasValue) {

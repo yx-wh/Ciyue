@@ -1,3 +1,4 @@
+import "package:ciyue/core/app_globals.dart";
 import "package:ciyue/core/providers.dart";
 import "package:ciyue/src/generated/i18n/app_localizations.dart";
 import "package:ciyue/ui/core/word_display/word_display.dart";
@@ -57,6 +58,9 @@ class _DesktopHomeSplitView extends ConsumerWidget {
     // inside it) on every history write or tab mutation is expensive.
     // Imperative calls below use ref.read so they don't subscribe.
     final homeModel = ref.read(homeModelProvider);
+    // The split view's own search box is the page's default; the entry pane
+    // keeps its showBackButton false so it does not override this.
+    pageSearchFocusNode = homeModel.searchBarFocusNode;
     final selectedWord = ref.watch(
       homeModelProvider.select((model) => model.selectedWord),
     );
