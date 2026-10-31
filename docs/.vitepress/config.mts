@@ -37,6 +37,7 @@ export default defineConfig({
               { text: 'Pronunciation', link: '/guide/pronunciation' },
               { text: 'Keyboard Shortcuts', link: '/guide/keyboard-shortcuts' },
               { text: 'Dictionary Links', link: '/guide/dictionary-links' },
+              { text: 'Link Schemes (Deep Dive)', link: '/guide/dictionary-link-schemes' },
               { text: 'FAQ', link: '/guide/faq' },
             ]
           }
@@ -73,6 +74,7 @@ export default defineConfig({
               { text: '发音与发音包', link: '/zh/guide/pronunciation' },
               { text: '键盘快捷键', link: '/zh/guide/keyboard-shortcuts' },
               { text: '词条内链接', link: '/zh/guide/dictionary-links' },
+              { text: '链接 Scheme 原理', link: '/zh/guide/dictionary-link-schemes' },
               { text: '常见问题', link: '/zh/guide/faq' },
             ]
           }
