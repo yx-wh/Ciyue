@@ -1,31 +1,12 @@
-import "dart:async";
-
 import "package:ciyue/core/app_globals.dart";
 import "package:ciyue/core/providers.dart";
 import "package:ciyue/repositories/settings.dart";
 import "package:ciyue/services/dictionary_lookup_instance.dart";
 import "package:ciyue/src/generated/i18n/app_localizations.dart";
 import "package:ciyue/utils.dart";
-import "package:flutter/foundation.dart";
-import "package:flutter/services.dart";
 import "package:material_ui/material_ui.dart";
 import "package:flutter_riverpod/flutter_riverpod.dart";
 import "package:go_router/go_router.dart";
-
-const _nativeKeyChannel = MethodChannel("ciyue/keys");
-
-/// Tells the Android activity whether Esc has to be taken over before the IME.
-///
-/// A focused text field lets fcitx5 consume the key, so the activity
-/// intercepts it and calls the same toggle back through the channel. With no
-/// field focused the key keeps its normal path: the WebView key bridge or the
-/// Flutter shortcut table.
-void setNativeEscapeIntercept(bool on) {
-  if (defaultTargetPlatform != TargetPlatform.android) return;
-  unawaited(
-    _nativeKeyChannel.invokeMethod("setInterceptEscape", on).catchError((_) {}),
-  );
-}
 
 /// Selects the whole text in the field that owns [focusNode].
 ///
@@ -83,9 +64,6 @@ class _WordSearchBarWithSuggestionsState
   /// is superseded mid-debounce so the list doesn't flicker.
   List<Widget>? _lastSuggestions;
 
-  /// Whether the suggestions view, which has a text field of its own, is open.
-  bool _viewOpen = false;
-
   static const _suggestionDebounce = Duration(milliseconds: 100);
 
   SearchController? get _effectiveController =>
@@ -122,10 +100,6 @@ class _WordSearchBarWithSuggestionsState
   @override
   void dispose() {
     widget.focusNode?.removeListener(_onFocusChanged);
-    if (activeSearchFocusNode == widget.focusNode) {
-      activeSearchFocusNode = null;
-      setNativeEscapeIntercept(false);
-    }
     super.dispose();
   }
 
@@ -139,21 +113,10 @@ class _WordSearchBarWithSuggestionsState
 
   void _onFocusChanged() {
     final node = widget.focusNode;
-    if (node == null) return;
-    if (node.hasFocus) {
-      activeSearchFocusNode = node;
-      final controller = _effectiveController;
-      if (controller != null) activeSearchController = controller;
-    }
-    _updateNativeIntercept();
-  }
-
-  /// Keeps the activity's Esc interception on while either the anchor or the
-  /// suggestions view holds the focus: both are text fields the IME can feed.
-  void _updateNativeIntercept() {
-    setNativeEscapeIntercept(
-      (widget.focusNode?.hasFocus ?? false) || _viewOpen,
-    );
+    if (node == null || !node.hasFocus) return;
+    activeSearchFocusNode = node;
+    final controller = _effectiveController;
+    if (controller != null) activeSearchController = controller;
   }
 
   void _selectAllText(SearchController controller) {
@@ -177,8 +140,6 @@ class _WordSearchBarWithSuggestionsState
     // into BACK while it is up, so the key would never reach the app, and
     // leaving the field focused keeps the keyboard on screen after a lookup.
     FocusManager.instance.primaryFocus?.unfocus();
-    _viewOpen = false;
-    setNativeEscapeIntercept(false);
     if (widget.isHome && settings.autoRemoveSearchWord) {
       controller.text = "";
     }
@@ -217,8 +178,6 @@ class _WordSearchBarWithSuggestionsState
           viewHintText: AppLocalizations.of(context)!.search,
           viewOnOpen: () {
             _markActive();
-            _viewOpen = true;
-            _updateNativeIntercept();
             final ctrl = _effectiveController;
             if (ctrl == null) return;
             if (widget.word.isNotEmpty && !widget.isHome) {
@@ -237,8 +196,6 @@ class _WordSearchBarWithSuggestionsState
             }
           },
           viewOnClose: () {
-            _viewOpen = false;
-            _updateNativeIntercept();
             final ctrl = _effectiveController;
             if (ctrl != null && widget.word.isNotEmpty && !widget.isHome) {
               ctrl.text = widget.word;
