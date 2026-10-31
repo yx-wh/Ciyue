@@ -37,9 +37,14 @@ Widget? buildTitle(
   String word,
   Settings settings, {
   required SearchController controller,
+  FocusNode? focusNode,
 }) {
   if (settings.showSearchBarInWordDisplay) {
-    return WordSearchBarWithSuggestions(word: word, controller: controller);
+    return WordSearchBarWithSuggestions(
+      word: word,
+      controller: controller,
+      focusNode: focusNode,
+    );
   } else {
     return null;
   }

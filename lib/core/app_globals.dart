@@ -32,11 +32,42 @@ TabController? dictTabController;
 // action over.
 void Function(String key)? expansionPageHandler;
 
-// Gives the focus back to the entry WebView.
+// The search box the reader last put the cursor in.
+FocusNode? activeSearchFocusNode;
+SearchController? activeSearchController;
+
+// The entry WebViews that can take the focus back, keyed by the state object
+// that owns them: two entries showing the same dictionary must not collide.
+final Map<
+  Object,
+  ({int Function() dictId, bool Function() isCurrent, void Function() focus})
+>
+entryFocusTargets = {};
+
+// The dictionary the reader is looking at.
+int? activeEntryDictId;
+
+// Gives the focus back to the entry the reader is looking at.
 //
-// The Esc shortcut toggles between the search box and the entry. The entry
-// holds the native focus, so its controller has to be asked directly.
-void Function()? entryFocusHandler;
+// The TabBarView keeps the neighbouring dictionary pages alive, so simply
+// asking the last created WebView would hand the focus to an off-screen tab.
+// The tab controller records which dictionary is on screen, and this picks its
+// WebView.
+void focusActiveEntry() {
+  final dictId = activeEntryDictId;
+  if (dictId == null) return;
+  final current = entryFocusTargets.values.where(
+    (target) => target.dictId() == dictId && target.isCurrent(),
+  );
+  if (current.isNotEmpty) {
+    current.last.focus();
+    return;
+  }
+  final matches = entryFocusTargets.values.where(
+    (target) => target.dictId() == dictId,
+  );
+  if (matches.isNotEmpty) matches.last.focus();
+}
 
 List<dynamic> ttsEngines = [];
 final List<dynamic> ttsLanguages = [];

@@ -117,9 +117,7 @@ void _focusSearchBar(HomeModel homeModel) {
   homeModel.focusSearchBar();
 }
 
-void _focusSearchAndSelectAll(WidgetRef ref) {
-  final homeModel = ref.read(homeModelProvider);
-  final node = homeModel.searchBarFocusNode;
+void _focusNodeAndSelectAll(FocusNode node) {
   // Run after the current key event has been dispatched: the text field's
   // dismiss intent can otherwise unfocus the box right after this returns.
   WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -135,20 +133,35 @@ void _focusSearchAndSelectAll(WidgetRef ref) {
   });
 }
 
+void _focusSearchAndSelectAll(WidgetRef ref) {
+  _focusNodeAndSelectAll(ref.read(homeModelProvider).searchBarFocusNode);
+}
+
 /// Moves the focus between the search box and the entry.
 ///
 /// The first Esc focuses the box and selects its text; the next one hands the
 /// focus back to the entry, so the same key walks between the two places a
 /// reader moves in.
 void _toggleSearchFocus(WidgetRef ref) {
+  final activeController = activeSearchController;
+  if (activeController != null &&
+      activeController.isAttached &&
+      activeController.isOpen) {
+    activeController.closeView(null);
+    return;
+  }
   final homeModel = ref.read(homeModelProvider);
-  if (homeModel.searchController.isOpen) {
+  if (homeModel.searchController.isAttached &&
+      homeModel.searchController.isOpen) {
     homeModel.searchController.closeView(null);
     return;
   }
-  if (homeModel.searchBarFocusNode.hasFocus) {
-    homeModel.searchBarFocusNode.unfocus();
-    entryFocusHandler?.call();
+  // The box the reader last used may be the home page's or the entry page's;
+  // both register themselves here when they take the focus.
+  final focused = activeSearchFocusNode;
+  if (focused != null && focused.hasFocus) {
+    focused.unfocus();
+    focusActiveEntry();
     return;
   }
   _focusSearchAndSelectAll(ref);
@@ -349,15 +362,27 @@ LogicalKeyboardKey? _logicalKeyForCode(String code) {
   return null;
 }
 
-/// Closes the search view when Esc is pressed.
+/// Handles Esc for one page: closes the search view, moves the focus into the
+/// page's search box, or hands it back to the entry.
 ///
-/// The search view is a route of its own: it sits above the home page's
+/// The search view is a route of its own: it sits above the page's
 /// [CallbackShortcuts] and does not handle Esc itself, so once it was opened
 /// the key could neither dismiss it nor reach the shortcuts behind it.
+///
+/// The page passes the search box it owns: the home page's sits in the split
+/// view, an entry page's in its title bar. Only the page on top handles the
+/// key, so a pushed entry page is never steered by the home page below it.
 class SearchEscapeCloser extends ConsumerStatefulWidget {
   final Widget child;
+  final FocusNode? focusNode;
+  final SearchController? controller;
 
-  const SearchEscapeCloser({super.key, required this.child});
+  const SearchEscapeCloser({
+    super.key,
+    required this.child,
+    this.focusNode,
+    this.controller,
+  });
 
   @override
   ConsumerState<SearchEscapeCloser> createState() => _SearchEscapeCloserState();
@@ -385,19 +410,32 @@ class _SearchEscapeCloserState extends ConsumerState<SearchEscapeCloser> {
       return false;
     }
     final homeModel = ref.read(homeModelProvider);
-    if (homeModel.searchController.isOpen) {
-      homeModel.searchController.closeView(null);
+    final controller = widget.controller ?? homeModel.searchController;
+    final node = widget.focusNode ?? homeModel.searchBarFocusNode;
+    final activeController = activeSearchController;
+    if (activeController != null &&
+        activeController.isAttached &&
+        activeController.isOpen) {
+      activeController.closeView(null);
+      return true;
+    }
+    if (controller.isAttached && controller.isOpen) {
+      controller.closeView(null);
       return true;
     }
     // The text field swallows Escape (DoNothingAndStopPropagation), so the
     // press has to be handled here rather than in CallbackShortcuts. The
     // focus may also have moved to the app bar, so do not require it on the
     // search box.
-    if (ModalRoute.of(context)?.isCurrent ?? false) {
-      _toggleSearchFocus(ref);
-      return true;
+    if (!(ModalRoute.of(context)?.isCurrent ?? false)) return false;
+    final focused = activeSearchFocusNode;
+    if (focused != null && focused.hasFocus) {
+      focused.unfocus();
+      focusActiveEntry();
+    } else {
+      _focusNodeAndSelectAll(node);
     }
-    return false;
+    return true;
   }
 
   @override

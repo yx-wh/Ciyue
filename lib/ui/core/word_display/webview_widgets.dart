@@ -314,6 +314,12 @@ class _WebviewAndroidState extends ConsumerState<WebviewAndroid> {
   String _contextWord = "";
 
   @override
+  void dispose() {
+    entryFocusTargets.remove(this);
+    super.dispose();
+  }
+
+  @override
   void didUpdateWidget(WebviewAndroid oldWidget) {
     super.didUpdateWidget(oldWidget);
     // When the word/content changes, reload the WebView with new data.
@@ -517,7 +523,11 @@ class _WebviewAndroidState extends ConsumerState<WebviewAndroid> {
           onContextWord: (word) => _contextWord = word,
           ref: ref,
         );
-        entryFocusHandler = () => unawaited(controller.requestFocus());
+        entryFocusTargets[this] = (
+          dictId: () => widget.dictId,
+          isCurrent: () => ModalRoute.of(context)?.isCurrent ?? false,
+          focus: () => unawaited(controller.requestFocus()),
+        );
       },
       onPageCommitVisible: (controller, url) async {
         // Only the expansion panels need live height reports, and only they
@@ -703,6 +713,12 @@ class _WebviewWindowsState extends ConsumerState<WebviewWindows> {
   Future<void> _desktopContentLoad = Future<void>.value();
 
   @override
+  void dispose() {
+    entryFocusTargets.remove(this);
+    super.dispose();
+  }
+
+  @override
   void didUpdateWidget(WebviewWindows oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.content != oldWidget.content ||
@@ -881,7 +897,11 @@ class _WebviewWindowsState extends ConsumerState<WebviewWindows> {
                     applyZoomKey(ref.read(settingsProvider), key),
                 ref: ref,
               );
-              entryFocusHandler = () => unawaited(controller.requestFocus());
+              entryFocusTargets[this] = (
+                dictId: () => widget.dictId,
+                isCurrent: () => ModalRoute.of(context)?.isCurrent ?? false,
+                focus: () => unawaited(controller.requestFocus()),
+              );
               await _scheduleDesktopContentLoad(controller);
             },
             onPageCommitVisible: (controller, url) async {
@@ -1020,8 +1040,11 @@ class _WebviewWindowsState extends ConsumerState<WebviewWindows> {
                         applyZoomKey(ref.read(settingsProvider), key),
                     ref: ref,
                   );
-                  entryFocusHandler = () =>
-                      unawaited(controller.requestFocus());
+                  entryFocusTargets[this] = (
+                    dictId: () => widget.dictId,
+                    isCurrent: () => ModalRoute.of(context)?.isCurrent ?? false,
+                    focus: () => unawaited(controller.requestFocus()),
+                  );
                 },
                 onPageCommitVisible: (controller, url) async {
                   // A reload starts a fresh document, which drops the inline
