@@ -109,17 +109,29 @@ Map<SingleActivator, VoidCallback> homeShortcutBindings(
 /// The search view is a route of its own, and opening it here would take the
 /// focus out of the home page, where the shortcuts live. Typing opens it the
 /// normal way.
+///
+/// Requesting focus again on the already focused node re-applies the focus
+/// chain, which could move the focus out of the box; leave it alone then.
 void _focusSearchBar(HomeModel homeModel) {
+  if (homeModel.searchBarFocusNode.hasFocus) return;
   homeModel.focusSearchBar();
 }
 
 void _focusSearchAndSelectAll(WidgetRef ref) {
   final homeModel = ref.read(homeModelProvider);
-  _focusSearchBar(homeModel);
-  // The focus node only gets a context once the field is focused, so the
-  // selection has to wait for the next frame.
+  final node = homeModel.searchBarFocusNode;
+  // Run after the current key event has been dispatched: the text field's
+  // dismiss intent can otherwise unfocus the box right after this returns.
   WidgetsBinding.instance.addPostFrameCallback((_) {
-    selectAllTextInField(homeModel.searchBarFocusNode);
+    if (!node.hasFocus) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      node.requestFocus();
+    }
+    // The focus node only gets a context once the field is focused, so the
+    // selection has to wait for the next frame as well.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      selectAllTextInField(node);
+    });
   });
 }
 
